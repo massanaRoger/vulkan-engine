@@ -48,3 +48,8 @@ void Engine::Vulkan::Renderer::create_instance(SDL_Window* window)
 
 	VK_CHECK(vkCreateInstance(&createInfo, nullptr, &m_instance));
 }
+
+void Engine::Vulkan::Renderer::cleanup()
+{
+	vkDestroyInstance(m_instance, nullptr);
+}

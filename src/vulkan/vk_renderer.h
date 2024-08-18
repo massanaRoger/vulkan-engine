@@ -6,6 +6,7 @@ namespace Engine {
 		class Renderer {
 		public:
 			void init_vulkan(SDL_Window* window);
+			void cleanup();
 		private:
 			VkInstance m_instance;
 			void create_instance(SDL_Window* window);

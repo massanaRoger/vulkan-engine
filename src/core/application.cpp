@@ -33,4 +33,6 @@ void Engine::Core::Application::run()
 			}
 		}
 	}
+
+	SDL_DestroyWindow(m_window);
 }
