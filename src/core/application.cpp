@@ -3,10 +3,10 @@
 #include "SDL_video.h"
 #include <SDL.h>
 
-Engine::Core::Application::Application(): m_renderer(Vulkan::Renderer())
+Engine::Application::Application(): m_renderer(Renderer())
 {}
 
-void Engine::Core::Application::init()
+void Engine::Application::init()
 {
 	SDL_Init(SDL_INIT_VIDEO);
 	SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
@@ -22,7 +22,7 @@ void Engine::Core::Application::init()
 	m_renderer.init_vulkan(m_window);
 }
 
-void Engine::Core::Application::run()
+void Engine::Application::run()
 {
 	SDL_Event e;
 	bool quit = false;
@@ -35,4 +35,5 @@ void Engine::Core::Application::run()
 	}
 
 	SDL_DestroyWindow(m_window);
+	m_renderer.cleanup();
 }

@@ -5,6 +5,8 @@ add_executable (engine
   vulkan/vk_renderer.h
   vulkan/vk_renderer.cpp
   vulkan/vk_types.h
+  vulkan/vk_utils.h
+  vulkan/vk_utils.cpp
   main.cpp
 )
 
