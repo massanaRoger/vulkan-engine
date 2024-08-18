@@ -1,5 +1,7 @@
 # Add source to this project's executable.
-add_executable (engine 
+add_executable (engine
+  core/application.cpp
+  core/application.h
   main.cpp
 )
 

@@ -1,5 +1,7 @@
-#include <iostream>
+#include "core/application.h"
 
 int main() {
-	std::cout << "Hola" << std::endl;
+	Engine::Core::Application app;
+	app.init();
+	app.run();
 }
