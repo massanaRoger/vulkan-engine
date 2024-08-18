@@ -3,6 +3,9 @@
 #include "SDL_video.h"
 #include <SDL.h>
 
+Engine::Core::Application::Application(): m_renderer(Vulkan::Renderer())
+{}
+
 void Engine::Core::Application::init()
 {
 	SDL_Init(SDL_INIT_VIDEO);
@@ -16,6 +19,7 @@ void Engine::Core::Application::init()
 		m_windowExtent.height,
 		window_flags
 	);
+	m_renderer.init_vulkan(m_window);
 }
 
 void Engine::Core::Application::run()
