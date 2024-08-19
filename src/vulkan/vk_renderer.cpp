@@ -15,6 +15,8 @@
 void Engine::Renderer::init_vulkan(SDL_Window* window)
 {
 	create_instance(window);
+	setup_debug_messenger();
+	pick_physical_device();
 }
 
 void Engine::Renderer::create_instance(SDL_Window* window)
@@ -121,4 +123,69 @@ void Engine::Renderer::populate_debug_messenger_create_info(VkDebugUtilsMessenge
     createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     createInfo.pfnUserCallback = debugCallback;
+}
+
+void Engine::Renderer::pick_physical_device()
+{
+	uint32_t deviceCount = 0;
+	vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
+	if (deviceCount == 0) {
+		std::cerr << "No suitable devices found" << std::endl;
+		abort();
+	}
+
+	std::vector<VkPhysicalDevice> devices(deviceCount);
+	vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
+
+	// Check if device is suitable
+	for (const auto& device : devices) {
+		VkPhysicalDeviceProperties2 deviceProperties{};
+		deviceProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+		VkPhysicalDeviceFeatures2 deviceFeatures{};
+		deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+		vkGetPhysicalDeviceProperties2(device, &deviceProperties);
+		vkGetPhysicalDeviceFeatures2(device, &deviceFeatures);
+
+		// Optional will have value if at least it has one queue family for displaying graphics
+		QueueFamilyIndices indices = findQueueFamilies(device);
+
+		// If has vulkan support and geometry shader and has a graphics queue family
+		if (deviceProperties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+			&& deviceFeatures.features.geometryShader
+			&& indices.graphicsFamily.has_value()
+		) {
+			m_physicalDevice = device;
+		}
+	}
+
+	if (m_physicalDevice == VK_NULL_HANDLE) {
+		std::cerr << "No suitable GPU found" << std::endl;
+		abort();
+	}
+}
+
+Engine::QueueFamilyIndices Engine::Renderer::findQueueFamilies(VkPhysicalDevice device)
+{
+	QueueFamilyIndices indices;
+	
+	uint32_t queueFamilyCount = 0;
+	vkGetPhysicalDeviceQueueFamilyProperties2(device, &queueFamilyCount, nullptr);
+
+	std::vector<VkQueueFamilyProperties2> queueFamilies(queueFamilyCount);
+	for (auto& queueFamily : queueFamilies) {
+		queueFamily.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2;
+	}
+	vkGetPhysicalDeviceQueueFamilyProperties2(device, &queueFamilyCount, queueFamilies.data());
+
+	int i = 0;
+	for (const auto& queueFamily : queueFamilies) {
+		if (queueFamily.queueFamilyProperties.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+			indices.graphicsFamily = i;
+			break;
+		}
+
+		i++;
+	}
+
+	return indices;
 }
