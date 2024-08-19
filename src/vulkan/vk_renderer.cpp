@@ -24,6 +24,8 @@ void Engine::Renderer::init_vulkan(SDL_Window* window)
 	pick_physical_device();
 	create_logical_device();
 	create_swap_chain();
+	create_image_views();
+	create_graphics_pipeline();
 }
 
 void Engine::Renderer::create_instance()
@@ -432,4 +434,43 @@ void Engine::Renderer::create_image_views()
 		VK_CHECK(vkCreateImageView(m_device, &createInfo, nullptr, &m_swapchainImageViews[i]));
 
 	}
+}
+
+void Engine::Renderer::create_graphics_pipeline()
+{
+	auto vertShaderCode = read_file("../../shaders/shader.vert.spv");
+	auto fragShaderCode = read_file("../../shaders/shader.frag.spv");
+
+	VkShaderModule vertShaderModule = create_shader_module(vertShaderCode);
+	VkShaderModule fragShaderModule = create_shader_module(fragShaderCode);
+
+	VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+	vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+	vertShaderStageInfo.module = vertShaderModule;
+	vertShaderStageInfo.pName = "main";
+
+	VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+	fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	fragShaderStageInfo.module = fragShaderModule;
+	fragShaderStageInfo.pName = "main";
+
+	VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+	vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
+	vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
+}
+
+VkShaderModule Engine::Renderer::create_shader_module(const std::vector<char>& code)
+{
+	VkShaderModuleCreateInfo createInfo{};
+	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	createInfo.codeSize = code.size();
+	createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+
+	VkShaderModule shaderModule;
+	VK_CHECK(vkCreateShaderModule(m_device, &createInfo, nullptr, &shaderModule));
+
+	return shaderModule;
 }

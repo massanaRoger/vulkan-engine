@@ -2,7 +2,11 @@
 #include "SDL_video.h"
 #include "SDL_vulkan.h"
 #include "vk_types.h"
+#include <cstddef>
+#include <fstream>
+#include <ios>
 #include <iostream>
+#include <ostream>
 #include <vulkan/vulkan_core.h>
 
 VkResult Engine::create_debug_utils_messenger_EXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger)
@@ -43,4 +47,22 @@ std::vector<const char*> Engine::get_required_extensions(SDL_Window* window) {
 	}
 
 	return extensions;
+}
+
+std::vector<char> Engine::read_file(const std::string& filename) {
+	std::ifstream file(filename, std::ios::ate | std::ios::binary);
+
+	if (!file.is_open()) {
+		std::cerr << "Failed to open file" << std::endl;
+		return std::vector<char>();
+	}
+
+	size_t fileSize = (size_t) file.tellg();
+	std::vector<char> buffer(fileSize);
+
+	file.seekg(0);
+	file.read(buffer.data(), fileSize);
+	file.close();
+
+	return buffer;
 }
