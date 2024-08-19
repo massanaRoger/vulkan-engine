@@ -17,6 +17,7 @@ void Engine::Renderer::init_vulkan(SDL_Window* window)
 	create_instance(window);
 	setup_debug_messenger();
 	pick_physical_device();
+	create_logical_device();
 }
 
 void Engine::Renderer::create_instance(SDL_Window* window)
@@ -59,10 +60,10 @@ void Engine::Renderer::create_instance(SDL_Window* window)
 
 void Engine::Renderer::cleanup()
 {
+	vkDestroyDevice(m_device, nullptr);
 	if (c_enableValidationLayers) {
 		destroy_debug_utils_messenger_EXT(m_instance, m_debugMessenger, nullptr);
 	}
-
 	vkDestroyInstance(m_instance, nullptr);
 }
 
@@ -189,3 +190,40 @@ Engine::QueueFamilyIndices Engine::Renderer::findQueueFamilies(VkPhysicalDevice 
 
 	return indices;
 }
+
+void Engine::Renderer::create_logical_device()
+{
+	QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
+
+	VkDeviceQueueCreateInfo queueCreateInfo{};
+	queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+	queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
+	queueCreateInfo.queueCount = 1;
+	float queuePriority = 1.0f;
+	queueCreateInfo.pQueuePriorities = &queuePriority;
+
+	VkPhysicalDeviceFeatures deviceFeatures{};
+
+	VkDeviceCreateInfo createInfo{};
+	createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	createInfo.pQueueCreateInfos = &queueCreateInfo;
+	createInfo.queueCreateInfoCount = 1;
+	createInfo.pEnabledFeatures = &deviceFeatures;
+	createInfo.enabledExtensionCount = 0;
+
+	if (c_enableValidationLayers) {
+		createInfo.enabledLayerCount = static_cast<uint32_t>(c_validationLayers.size());
+		createInfo.ppEnabledLayerNames = c_validationLayers.data();
+	} else {
+		createInfo.enabledLayerCount = 0;
+	}
+
+	VK_CHECK(vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device));
+
+	vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
+}
+
+
+
+
+

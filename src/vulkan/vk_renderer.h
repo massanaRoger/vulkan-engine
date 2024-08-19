@@ -17,6 +17,8 @@ private:
 	VkInstance m_instance;
 	VkDebugUtilsMessengerEXT m_debugMessenger;
 	VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
+	VkDevice m_device;
+	VkQueue m_graphicsQueue;
 
 	void create_instance(SDL_Window* window);
 	bool check_validation_layer_support();
@@ -29,5 +31,6 @@ private:
 	void populate_debug_messenger_create_info(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
 	void pick_physical_device();
 	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
+	void create_logical_device();
 };
 }
