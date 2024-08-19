@@ -34,10 +34,11 @@ private:
 	VkQueue m_graphicsQueue;
 	VkQueue m_presentQueue;
 	VkSurfaceKHR m_surface;
-	VkSwapchainKHR m_swapChain;
-	std::vector<VkImage> m_swapChainImages;
-	VkFormat m_swapChainImageFormat;
-	VkExtent2D m_swapChainExtent;
+	VkSwapchainKHR m_swapchain;
+	std::vector<VkImage> m_swapchainImages;
+	VkFormat m_swapchainImageFormat;
+	VkExtent2D m_swapchainExtent;
+	std::vector<VkImageView> m_swapchainImageViews;
 
 	void create_instance();
 
@@ -65,5 +66,7 @@ private:
 	VkPresentModeKHR choose_swap_present_mode(const std::vector<VkPresentModeKHR>& availablePresentModes);
 	VkExtent2D choose_swap_extent(const VkSurfaceCapabilitiesKHR& capabilities);
 	void create_swap_chain();
+
+	void create_image_views();
 };
 }
