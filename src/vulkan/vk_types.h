@@ -11,6 +11,10 @@ const std::vector<const char*> c_validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 };
 
+const std::vector<const char*> c_deviceExtensions = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME
+};
+
 #ifdef NDEBUG
 const bool c_enableValidationLayers = false;
 #else
