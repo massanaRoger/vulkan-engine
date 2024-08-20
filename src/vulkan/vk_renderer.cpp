@@ -25,6 +25,7 @@ void Engine::Renderer::init_vulkan(SDL_Window* window)
 	create_logical_device();
 	create_swap_chain();
 	create_image_views();
+	create_render_pass();
 	create_graphics_pipeline();
 }
 
@@ -69,6 +70,7 @@ void Engine::Renderer::create_instance()
 void Engine::Renderer::cleanup()
 {
 	vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+	vkDestroyRenderPass(m_device, m_renderPass, nullptr);
 	for (auto imageView : m_swapchainImageViews) {
 		vkDestroyImageView(m_device, imageView, nullptr);
 	}
@@ -557,4 +559,38 @@ VkShaderModule Engine::Renderer::create_shader_module(const std::vector<char>& c
 	VK_CHECK(vkCreateShaderModule(m_device, &createInfo, nullptr, &shaderModule));
 
 	return shaderModule;
+}
+
+void Engine::Renderer::create_render_pass()
+{
+	VkAttachmentDescription2 colorAttachment{};
+	colorAttachment.sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2;
+	colorAttachment.format = m_swapchainImageFormat;
+	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	VkAttachmentReference2 colorAttachmentRef{};
+	colorAttachmentRef.sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
+	colorAttachmentRef.attachment = 0;
+	colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkSubpassDescription2 subpass{};
+	subpass.sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2;
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colorAttachmentRef;
+
+	VkRenderPassCreateInfo2 renderPassInfo{};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2;
+	renderPassInfo.attachmentCount = 1;
+	renderPassInfo.pAttachments = &colorAttachment;
+	renderPassInfo.subpassCount = 1;
+	renderPassInfo.pSubpasses = &subpass;
+
+	VK_CHECK(vkCreateRenderPass2(m_device, &renderPassInfo, nullptr, &m_renderPass));
 }
