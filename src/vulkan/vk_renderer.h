@@ -41,6 +41,7 @@ private:
 	std::vector<VkImageView> m_swapchainImageViews;
 	VkRenderPass m_renderPass;
 	VkPipelineLayout m_pipelineLayout;
+	VkPipeline m_graphicsPipeline;
 
 	void create_instance();
 
