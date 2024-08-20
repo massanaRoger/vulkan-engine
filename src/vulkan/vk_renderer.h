@@ -43,6 +43,7 @@ private:
 	VkPipelineLayout m_pipelineLayout;
 	VkPipeline m_graphicsPipeline;
 	std::vector<VkFramebuffer> m_swapchainFramebuffers;
+	VkCommandPool m_commandPool;
 
 	void create_instance();
 
@@ -58,8 +59,7 @@ private:
 	void pick_physical_device();
 	void create_logical_device();
 
-	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
-
+	QueueFamilyIndices find_queue_families(VkPhysicalDevice device);
 
 	void create_surface();
 
@@ -79,5 +79,8 @@ private:
 	void create_render_pass();
 
 	void create_frame_buffers();
+
+	void create_command_pool();
+	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 };
 }

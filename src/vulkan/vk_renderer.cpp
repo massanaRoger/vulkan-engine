@@ -28,6 +28,7 @@ void Engine::Renderer::init_vulkan(SDL_Window* window)
 	create_render_pass();
 	create_graphics_pipeline();
 	create_frame_buffers();
+	create_command_pool();
 }
 
 void Engine::Renderer::create_instance()
@@ -70,6 +71,7 @@ void Engine::Renderer::create_instance()
 
 void Engine::Renderer::cleanup()
 {
+	vkDestroyCommandPool(m_device, m_commandPool, nullptr);
 	for (auto framebuffer : m_swapchainFramebuffers) {
 		vkDestroyFramebuffer(m_device, framebuffer, nullptr);
 	}
@@ -169,7 +171,7 @@ void Engine::Renderer::pick_physical_device()
 		vkGetPhysicalDeviceFeatures2(device, &deviceFeatures);
 
 		// Optional will have value if at least it has one queue family for displaying graphics
-		QueueFamilyIndices indices = findQueueFamilies(device);
+		QueueFamilyIndices indices = find_queue_families(device);
 
 		// If has vulkan support and geometry shader and has a graphics queue family
 		if (deviceProperties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
@@ -192,7 +194,7 @@ void Engine::Renderer::pick_physical_device()
 	}
 }
 
-Engine::QueueFamilyIndices Engine::Renderer::findQueueFamilies(VkPhysicalDevice device)
+Engine::QueueFamilyIndices Engine::Renderer::find_queue_families(VkPhysicalDevice device)
 {
 	QueueFamilyIndices indices;
 	
@@ -229,7 +231,7 @@ Engine::QueueFamilyIndices Engine::Renderer::findQueueFamilies(VkPhysicalDevice 
 
 void Engine::Renderer::create_logical_device()
 {
-	QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
+	QueueFamilyIndices indices = find_queue_families(m_physicalDevice);
 
 	std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
 	std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value()};
@@ -390,7 +392,7 @@ void Engine::Renderer::create_swap_chain()
 	m_swapchainImageFormat = surfaceFormat.format;
 	m_swapchainExtent = extent;
 
-	QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
+	QueueFamilyIndices indices = find_queue_families(m_physicalDevice);
 	uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
 
 	// If the graphics queue family and presentation queue family are not the same
@@ -642,4 +644,51 @@ void Engine::Renderer::create_frame_buffers()
 
 		VK_CHECK(vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_swapchainFramebuffers[i]));
 	}
+}
+
+void Engine::Renderer::create_command_pool()
+{
+	QueueFamilyIndices queueFamilyIndices = find_queue_families(m_physicalDevice);
+
+	VkCommandPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+
+	VK_CHECK(vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_commandPool));
+}
+
+void Engine::Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = 0;
+	beginInfo.pInheritanceInfo = nullptr;
+
+	VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo));
+
+	VkRenderPassBeginInfo renderPassInfo{};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	renderPassInfo.renderPass = m_renderPass;
+	renderPassInfo.framebuffer = m_swapchainFramebuffers[imageIndex];
+	renderPassInfo.renderArea.offset = { 0, 0 };
+	renderPassInfo.renderArea.extent = m_swapchainExtent;
+
+	VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+	renderPassInfo.clearValueCount = 1;
+	renderPassInfo.pClearValues = &clearColor;
+
+	VkSubpassBeginInfo subpassBeginInfo{};
+	subpassBeginInfo.sType = VK_STRUCTURE_TYPE_SUBPASS_BEGIN_INFO;
+	subpassBeginInfo.contents = VK_SUBPASS_CONTENTS_INLINE;
+
+	VkSubpassEndInfo subpassEndInfo{};
+	subpassEndInfo.sType = VK_STRUCTURE_TYPE_SUBPASS_END_INFO;
+
+	vkCmdBeginRenderPass2(commandBuffer, &renderPassInfo, &subpassBeginInfo);
+
+	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+	vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+	vkCmdEndRenderPass2(commandBuffer, &subpassEndInfo);
+
+	VK_CHECK(vkEndCommandBuffer(commandBuffer));
 }
