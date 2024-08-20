@@ -27,6 +27,7 @@ void Engine::Renderer::init_vulkan(SDL_Window* window)
 	create_image_views();
 	create_render_pass();
 	create_graphics_pipeline();
+	create_frame_buffers();
 }
 
 void Engine::Renderer::create_instance()
@@ -69,6 +70,9 @@ void Engine::Renderer::create_instance()
 
 void Engine::Renderer::cleanup()
 {
+	for (auto framebuffer : m_swapchainFramebuffers) {
+		vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+	}
 	vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
 	vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
 	vkDestroyRenderPass(m_device, m_renderPass, nullptr);
@@ -617,4 +621,25 @@ void Engine::Renderer::create_render_pass()
 	renderPassInfo.pSubpasses = &subpass;
 
 	VK_CHECK(vkCreateRenderPass2(m_device, &renderPassInfo, nullptr, &m_renderPass));
+}
+
+void Engine::Renderer::create_frame_buffers()
+{
+	m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
+	for (size_t i = 0; i < m_swapchainFramebuffers.size(); i++) {
+		VkImageView attachments[] = {
+			m_swapchainImageViews[i]
+		};
+
+		VkFramebufferCreateInfo framebufferInfo = {};
+		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		framebufferInfo.renderPass = m_renderPass;
+		framebufferInfo.attachmentCount = 1;
+		framebufferInfo.pAttachments = attachments;
+		framebufferInfo.width = m_swapchainExtent.width;
+		framebufferInfo.height = m_swapchainExtent.height;
+		framebufferInfo.layers = 1;
+
+		VK_CHECK(vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_swapchainFramebuffers[i]));
+	}
 }
