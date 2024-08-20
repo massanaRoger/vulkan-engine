@@ -39,6 +39,7 @@ private:
 	VkFormat m_swapchainImageFormat;
 	VkExtent2D m_swapchainExtent;
 	std::vector<VkImageView> m_swapchainImageViews;
+	VkPipelineLayout m_pipelineLayout;
 
 	void create_instance();
 
