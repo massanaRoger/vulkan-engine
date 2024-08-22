@@ -25,10 +25,19 @@ struct SwapChainSupportDetails {
 
 class Renderer {
 public:
+	static Renderer& getInstance();
+
 	void init_vulkan(SDL_Window* window);
 	void draw_frame();
 	void cleanup();
+
+	Renderer(const Renderer&) = delete;
+	Renderer& operator=(const Renderer&) = delete;
+
+	bool frameBufferResized = false;
 private:
+	Renderer() = default;
+
 	SDL_Window* m_window;
 	VkInstance m_instance;
 	VkDebugUtilsMessengerEXT m_debugMessenger;
@@ -54,6 +63,7 @@ private:
 
 	uint32_t m_currentFrame;
 
+
 	void create_instance();
 
 	bool check_validation_layer_support();
@@ -78,7 +88,9 @@ private:
 	VkSurfaceFormatKHR choose_swap_chain_format(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 	VkPresentModeKHR choose_swap_present_mode(const std::vector<VkPresentModeKHR>& availablePresentModes);
 	VkExtent2D choose_swap_extent(const VkSurfaceCapabilitiesKHR& capabilities);
-	void create_swap_chain();
+	void create_swapchain();
+	void recreate_swapchain();
+	void cleanup_swapchain();
 
 	void create_image_views();
 
@@ -94,5 +106,6 @@ private:
 
 	void create_sync_objects();
 	void create_command_buffers();
+
 };
 }

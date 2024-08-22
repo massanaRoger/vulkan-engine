@@ -1,4 +1,5 @@
 #include "vk_renderer.h"
+#include "SDL_events.h"
 #include "SDL_stdinc.h"
 #include "SDL_video.h"
 #include "vk_types.h"
@@ -15,6 +16,12 @@
 #include <vulkan/vulkan_core.h>
 #include <SDL_vulkan.h>
 
+Engine::Renderer& Engine::Renderer::getInstance()
+{
+	static Engine::Renderer instance;
+	return instance;
+}
+
 void Engine::Renderer::init_vulkan(SDL_Window* window)
 {
 	m_window = window;
@@ -23,7 +30,7 @@ void Engine::Renderer::init_vulkan(SDL_Window* window)
 	create_surface();
 	pick_physical_device();
 	create_logical_device();
-	create_swap_chain();
+	create_swapchain();
 	create_image_views();
 	create_render_pass();
 	create_graphics_pipeline();
@@ -76,6 +83,13 @@ void Engine::Renderer::cleanup()
 	vkDeviceWaitIdle(m_device);
 	SDL_DestroyWindow(m_window);
 
+	cleanup_swapchain();
+
+	vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
+	vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+
+	vkDestroyRenderPass(m_device, m_renderPass, nullptr);
+
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 		vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
 		vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
@@ -83,21 +97,9 @@ void Engine::Renderer::cleanup()
 	}
 
 	vkDestroyCommandPool(m_device, m_commandPool, nullptr);
-	for (auto framebuffer : m_swapchainFramebuffers) {
-		vkDestroyFramebuffer(m_device, framebuffer, nullptr);
-	}
-
-	vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
-	vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
-	
-	vkDestroyRenderPass(m_device, m_renderPass, nullptr);
-	for (auto imageView : m_swapchainImageViews) {
-		vkDestroyImageView(m_device, imageView, nullptr);
-	}
-
-	vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
 
 	vkDestroyDevice(m_device, nullptr);
+
 	if (c_enableValidationLayers) {
 		destroy_debug_utils_messenger_EXT(m_instance, m_debugMessenger, nullptr);
 	}
@@ -109,10 +111,19 @@ void Engine::Renderer::cleanup()
 void Engine::Renderer::draw_frame()
 {
 	vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
-	vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
 
 	uint32_t imageIndex;
-	VK_CHECK(vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex));
+	VkResult result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex);
+	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+		recreate_swapchain();
+		return;
+	} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+		std::cerr << "Failed to acquire swapchain image" << std::endl;
+		abort();
+	}
+
+	vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
+
 	vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
 	record_command_buffer(m_commandBuffers[m_currentFrame], imageIndex);
 	
@@ -146,7 +157,15 @@ void Engine::Renderer::draw_frame()
 	presentInfo.pImageIndices = &imageIndex;
 	presentInfo.pResults = nullptr;
 
-	VK_CHECK(vkQueuePresentKHR(m_presentQueue, &presentInfo));
+	result = vkQueuePresentKHR(m_presentQueue, &presentInfo);
+
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || frameBufferResized) {
+		frameBufferResized = false;
+		recreate_swapchain();
+	} else if (result != VK_SUCCESS) {
+		std::cerr << "Failed to present swapchain!" << std::endl;
+		abort();
+	}
 
 	m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 
@@ -427,7 +446,7 @@ VkExtent2D Engine::Renderer::choose_swap_extent(const VkSurfaceCapabilitiesKHR& 
 	}
 }
 
-void Engine::Renderer::create_swap_chain()
+void Engine::Renderer::create_swapchain()
 {
 	Engine::SwapChainSupportDetails swapChainSupport = query_swap_chain_support(m_physicalDevice);
 
@@ -479,6 +498,37 @@ void Engine::Renderer::create_swap_chain()
 	vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, nullptr);
 	m_swapchainImages.resize(imageCount);
 	vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, m_swapchainImages.data());
+}
+
+void Engine::Renderer::cleanup_swapchain()
+{
+	for (size_t i = 0; i < m_swapchainFramebuffers.size(); i++) {
+		vkDestroyFramebuffer(m_device, m_swapchainFramebuffers[i], nullptr);
+	}
+
+	for (size_t i = 0; i < m_swapchainImageViews.size(); i++) {
+		vkDestroyImageView(m_device, m_swapchainImageViews[i], nullptr);
+	}
+
+	vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+}
+
+void Engine::Renderer::recreate_swapchain()
+{
+	bool isMinimized = SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED;
+
+	while (isMinimized) {
+		isMinimized = SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED;
+		SDL_WaitEvent(nullptr);
+	}
+
+	vkDeviceWaitIdle(m_device);
+
+	cleanup_swapchain();
+
+	create_swapchain();
+	create_image_views();
+	create_frame_buffers();
 }
 
 void Engine::Renderer::create_image_views()
@@ -823,3 +873,4 @@ void Engine::Renderer::create_sync_objects()
 	}
 
 }
+
