@@ -6,6 +6,8 @@
 
 namespace Engine {
 
+const int MAX_FRAMES_IN_FLIGHT=2;
+
 struct QueueFamilyIndices {
 	std::optional<uint32_t> graphicsFamily;
 	std::optional<uint32_t> presentFamily;
@@ -45,10 +47,12 @@ private:
 	VkPipeline m_graphicsPipeline;
 	std::vector<VkFramebuffer> m_swapchainFramebuffers;
 	VkCommandPool m_commandPool;
-	VkCommandBuffer m_commandBuffer;
-	VkSemaphore m_imageAvailableSemaphore;
-	VkSemaphore m_renderFinishedSemaphore;
-	VkFence m_inFlightFence;
+	std::vector<VkCommandBuffer> m_commandBuffers;
+	std::vector<VkSemaphore> m_imageAvailableSemaphores;
+	std::vector<VkSemaphore> m_renderFinishedSemaphores;
+	std::vector<VkFence> m_inFlightFences;
+
+	uint32_t m_currentFrame;
 
 	void create_instance();
 
@@ -89,6 +93,6 @@ private:
 	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
 	void create_sync_objects();
-	void create_command_buffer();
+	void create_command_buffers();
 };
 }
