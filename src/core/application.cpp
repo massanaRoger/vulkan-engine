@@ -32,6 +32,7 @@ void Engine::Application::run()
 				quit = true;
 			}
 		}
+		m_renderer.draw_frame();
 	}
 
 	SDL_DestroyWindow(m_window);

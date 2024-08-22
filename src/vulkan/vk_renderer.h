@@ -24,6 +24,7 @@ struct SwapChainSupportDetails {
 class Renderer {
 public:
 	void init_vulkan(SDL_Window* window);
+	void draw_frame();
 	void cleanup();
 private:
 	SDL_Window* m_window;
@@ -44,6 +45,10 @@ private:
 	VkPipeline m_graphicsPipeline;
 	std::vector<VkFramebuffer> m_swapchainFramebuffers;
 	VkCommandPool m_commandPool;
+	VkCommandBuffer m_commandBuffer;
+	VkSemaphore m_imageAvailableSemaphore;
+	VkSemaphore m_renderFinishedSemaphore;
+	VkFence m_inFlightFence;
 
 	void create_instance();
 
@@ -82,5 +87,8 @@ private:
 
 	void create_command_pool();
 	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+
+	void create_sync_objects();
+	void create_command_buffer();
 };
 }
