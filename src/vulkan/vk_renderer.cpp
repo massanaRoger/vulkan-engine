@@ -73,6 +73,9 @@ void Engine::Renderer::create_instance()
 
 void Engine::Renderer::cleanup()
 {
+	vkDeviceWaitIdle(m_device);
+	SDL_DestroyWindow(m_window);
+
 	vkDestroySemaphore(m_device, m_imageAvailableSemaphore, nullptr);
 	vkDestroySemaphore(m_device, m_renderFinishedSemaphore, nullptr);
 	vkDestroyFence(m_device, m_inFlightFence, nullptr);

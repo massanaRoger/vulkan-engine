@@ -35,6 +35,5 @@ void Engine::Application::run()
 		m_renderer.draw_frame();
 	}
 
-	SDL_DestroyWindow(m_window);
 	m_renderer.cleanup();
 }
