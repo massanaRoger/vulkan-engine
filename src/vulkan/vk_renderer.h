@@ -26,6 +26,12 @@ struct SwapChainSupportDetails {
 	std::vector<VkPresentModeKHR> presentModes;
 };
 
+struct UniformBufferObject {
+	glm::mat4 model;
+	glm::mat4 view;
+	glm::mat4 proj;
+};
+
 struct Vertex {
 	glm::vec2 pos;
 	glm::vec3 color;
@@ -88,6 +94,9 @@ private:
 	VkExtent2D m_swapchainExtent;
 	std::vector<VkImageView> m_swapchainImageViews;
 	VkRenderPass m_renderPass;
+	VkDescriptorSetLayout m_descriptorSetLayout;
+	VkDescriptorPool m_descriptorPool;
+	std::vector<VkDescriptorSet> m_descriptorSets;
 	VkPipelineLayout m_pipelineLayout;
 	VkPipeline m_graphicsPipeline;
 	std::vector<VkFramebuffer> m_swapchainFramebuffers;
@@ -97,6 +106,11 @@ private:
 	VkDeviceMemory m_vertexBufferMemory;
 	VkBuffer m_indexBuffer;
 	VkDeviceMemory m_indexBufferMemory;
+
+	std::vector<VkBuffer> m_uniformBuffers;
+	std::vector<VkDeviceMemory> m_uniformBuffersMemory;
+	std::vector<void*> m_uniformBuffersMapped;
+
 	std::vector<VkCommandBuffer> m_commandBuffers;
 	std::vector<VkSemaphore> m_imageAvailableSemaphores;
 	std::vector<VkSemaphore> m_renderFinishedSemaphores;
@@ -145,12 +159,16 @@ private:
 
 	void create_image_views();
 
+	void create_descriptor_set_layout();
+
 	void create_graphics_pipeline();
 	VkShaderModule create_shader_module(const std::vector<char>& code);
 
 	void create_render_pass();
 
 	void create_frame_buffers();
+	void create_uniform_buffers();
+	void update_uniform_buffer(uint32_t currentImage);
 
 	void create_command_pools();
 	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
@@ -159,6 +177,8 @@ private:
 
 	void create_sync_objects();
 	void create_command_buffers();
+	void create_descriptor_pool();
+	void create_descriptor_sets();
 
 	void create_vertex_buffer();
 	void create_index_buffer();
