@@ -35,10 +35,9 @@ void Engine::Renderer::init_vulkan(SDL_Window* window)
 	create_render_pass();
 	create_graphics_pipeline();
 	create_frame_buffers();
-
 	create_command_pools();
-
 	create_vertex_buffer();
+	create_index_buffer();
 	create_command_buffers();
 	create_sync_objects();
 }
@@ -90,6 +89,9 @@ void Engine::Renderer::cleanup()
 
 	vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
 	vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
+
+	vkDestroyBuffer(m_device, m_indexBuffer, nullptr);
+	vkFreeMemory(m_device, m_indexBufferMemory, nullptr);
 
 	vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
 	vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
@@ -867,6 +869,27 @@ void Engine::Renderer::create_vertex_buffer()
 	vkFreeMemory(m_device, stagingBufferMemory, nullptr);
 }
 
+void Engine::Renderer::create_index_buffer()
+{
+	VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+
+	VkBuffer stagingBuffer;
+	VkDeviceMemory stagingBufferMemory;
+	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_SHARING_MODE_EXCLUSIVE, stagingBuffer, stagingBufferMemory);
+
+	void* data;
+	vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
+	memcpy(data, indices.data(), static_cast<size_t>(bufferSize));
+	vkUnmapMemory(m_device, stagingBufferMemory);
+
+	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_SHARING_MODE_EXCLUSIVE, m_indexBuffer, m_indexBufferMemory);
+
+	copy_buffer(stagingBuffer, m_indexBuffer, bufferSize);
+
+	vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+	vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+}
+
 void Engine::Renderer::copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
 {
 	VkCommandBufferAllocateInfo allocInfo{};
@@ -961,6 +984,7 @@ void Engine::Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint
 	VkBuffer vertexBuffers[] = { m_vertexBuffer };
 	VkDeviceSize offsets[] = { 0 };
 	vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+	vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
 	VkViewport viewport{};
 	viewport.x = 0.0f;
@@ -976,7 +1000,7 @@ void Engine::Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint
 	scissor.extent = m_swapchainExtent;
 	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-	vkCmdDraw(commandBuffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+	vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 	vkCmdEndRenderPass2(commandBuffer, &subpassEndInfo);
 
 	VK_CHECK(vkEndCommandBuffer(commandBuffer));
