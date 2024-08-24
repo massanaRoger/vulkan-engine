@@ -143,6 +143,8 @@ private:
 
 	void create_command_pool();
 	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+	void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory);
+	void copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
 	void create_sync_objects();
 	void create_command_buffers();
