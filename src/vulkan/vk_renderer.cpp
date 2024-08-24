@@ -35,7 +35,9 @@ void Engine::Renderer::init_vulkan(SDL_Window* window)
 	create_render_pass();
 	create_graphics_pipeline();
 	create_frame_buffers();
-	create_command_pool();
+
+	create_command_pools();
+
 	create_vertex_buffer();
 	create_command_buffers();
 	create_sync_objects();
@@ -100,7 +102,8 @@ void Engine::Renderer::cleanup()
 		vkDestroyFence(m_device, m_inFlightFences[i], nullptr);
 	}
 
-	vkDestroyCommandPool(m_device, m_commandPool, nullptr);
+	vkDestroyCommandPool(m_device, m_transferCommandPool, nullptr);
+	vkDestroyCommandPool(m_device, m_graphicsCommandPool, nullptr);
 
 	vkDestroyDevice(m_device, nullptr);
 
@@ -294,8 +297,15 @@ Engine::QueueFamilyIndices Engine::Renderer::find_queue_families(VkPhysicalDevic
 
 	int i = 0;
 	for (const auto& queueFamily : queueFamilies) {
+		
 		if (queueFamily.queueFamilyProperties.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+			// If it has a dedicated graphics family
+		
 			indices.graphicsFamily = i;
+		} else if (queueFamily.queueFamilyProperties.queueFlags & VK_QUEUE_TRANSFER_BIT) {
+			// Dedicated transfer family without graphics
+		
+			indices.transferFamily = i;
 		}
 
 		VkBool32 presentSupport = false;
@@ -305,13 +315,14 @@ Engine::QueueFamilyIndices Engine::Renderer::find_queue_families(VkPhysicalDevic
 		}
 
 		if (indices.isComplete()) {
-			break;
+			return indices;
 		}
 
 		i++;
 	}
 
-	return indices;
+	std::cerr << "No dedicated transfer queue found" << std::endl;
+	abort();
 }
 
 void Engine::Renderer::create_logical_device()
@@ -319,7 +330,7 @@ void Engine::Renderer::create_logical_device()
 	QueueFamilyIndices indices = find_queue_families(m_physicalDevice);
 
 	std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-	std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value()};
+	std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value(), indices.transferFamily.value()};
 
 	float queuePriority = 1.0f;
 	for (uint32_t queueFamily : uniqueQueueFamilies) {
@@ -329,7 +340,6 @@ void Engine::Renderer::create_logical_device()
 		queueCreateInfo.queueCount = 1;
 		queueCreateInfo.pQueuePriorities = &queuePriority;
 		queueCreateInfos.push_back(queueCreateInfo);
-
 	}
 
 	VkPhysicalDeviceFeatures deviceFeatures{};
@@ -355,6 +365,7 @@ void Engine::Renderer::create_logical_device()
 
 	vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
 	vkGetDeviceQueue(m_device, indices.presentFamily.value(), 0, &m_presentQueue);
+	vkGetDeviceQueue(m_device, indices.transferFamily.value(), 0, &m_transferQueue);
 }
 
 void Engine::Renderer::create_surface()
@@ -788,25 +799,37 @@ void Engine::Renderer::create_frame_buffers()
 	}
 }
 
-void Engine::Renderer::create_command_pool()
+void Engine::Renderer::create_command_pools()
 {
-	QueueFamilyIndices queueFamilyIndices = find_queue_families(m_physicalDevice);
+	m_queueFamilies = find_queue_families(m_physicalDevice);
 
-	VkCommandPoolCreateInfo poolInfo{};
-	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-	poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+	VkCommandPoolCreateInfo graphicsPoolInfo{};
+	graphicsPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	graphicsPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	graphicsPoolInfo.queueFamilyIndex = m_queueFamilies.graphicsFamily.value();
 
-	VK_CHECK(vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_commandPool));
+	VK_CHECK(vkCreateCommandPool(m_device, &graphicsPoolInfo, nullptr, &m_graphicsCommandPool));
+
+	VkCommandPoolCreateInfo transferPoolInfo{};
+	transferPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	transferPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	transferPoolInfo.queueFamilyIndex = m_queueFamilies.transferFamily.value();
+
+	VK_CHECK(vkCreateCommandPool(m_device, &transferPoolInfo, nullptr, &m_transferCommandPool));
 }
 
-void Engine::Renderer::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory)
+void Engine::Renderer::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkSharingMode sharingMode, VkBuffer &buffer, VkDeviceMemory &bufferMemory)
 {
 	VkBufferCreateInfo bufferInfo{};
 	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	bufferInfo.size = size;
 	bufferInfo.usage = usage;
-	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	bufferInfo.sharingMode = sharingMode;
+	uint32_t indices[] = { m_queueFamilies.graphicsFamily.value(), m_queueFamilies.transferFamily.value() };
+	if (bufferInfo.sharingMode == VK_SHARING_MODE_CONCURRENT) {
+		bufferInfo.pQueueFamilyIndices = indices;
+		bufferInfo.queueFamilyIndexCount = 2;
+	}
 
 	if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create buffer!");
@@ -830,14 +853,14 @@ void Engine::Renderer::create_vertex_buffer()
 	VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 	VkBuffer stagingBuffer;
 	VkDeviceMemory stagingBufferMemory;
-	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_SHARING_MODE_EXCLUSIVE, stagingBuffer, stagingBufferMemory);
 	
 	void* data;
 	vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
 	memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
 	vkUnmapMemory(m_device, stagingBufferMemory);
 
-	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_vertexBuffer, m_vertexBufferMemory);
+	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_SHARING_MODE_CONCURRENT, m_vertexBuffer, m_vertexBufferMemory);
 	copy_buffer(stagingBuffer, m_vertexBuffer, bufferSize);
 
 	vkDestroyBuffer(m_device, stagingBuffer, nullptr);
@@ -849,7 +872,7 @@ void Engine::Renderer::copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDev
 	VkCommandBufferAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandPool = m_commandPool;
+	allocInfo.commandPool = m_transferCommandPool;
 	allocInfo.commandBufferCount = 1;
 
 	VkCommandBuffer commandBuffer;
@@ -873,9 +896,9 @@ void Engine::Renderer::copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDev
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &commandBuffer;
 
-	vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-	vkQueueWaitIdle(m_graphicsQueue);
-	vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
+	vkQueueSubmit(m_transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
+	vkQueueWaitIdle(m_transferQueue);
+	vkFreeCommandBuffers(m_device, m_transferCommandPool, 1, &commandBuffer);
 }
 
 uint32_t Engine::Renderer::find_memory_type(uint32_t typeFilter, VkMemoryPropertyFlags properties)
@@ -898,7 +921,7 @@ void Engine::Renderer::create_command_buffers()
 	m_commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 	VkCommandBufferAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool = m_commandPool;
+	allocInfo.commandPool = m_graphicsCommandPool;
 	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	allocInfo.commandBufferCount = static_cast<uint32_t>(m_commandBuffers.size()) ;
 

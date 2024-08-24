@@ -13,9 +13,10 @@ const int MAX_FRAMES_IN_FLIGHT=2;
 struct QueueFamilyIndices {
 	std::optional<uint32_t> graphicsFamily;
 	std::optional<uint32_t> presentFamily;
+	std::optional<uint32_t> transferFamily;
 
 	bool isComplete() {
-		return graphicsFamily.has_value() && presentFamily.has_value();
+		return graphicsFamily.has_value() && presentFamily.has_value() && transferFamily.has_value();
 	}
 };
 
@@ -78,6 +79,8 @@ private:
 	VkDevice m_device;
 	VkQueue m_graphicsQueue;
 	VkQueue m_presentQueue;
+	VkQueue m_transferQueue;
+	QueueFamilyIndices m_queueFamilies;
 	VkSurfaceKHR m_surface;
 	VkSwapchainKHR m_swapchain;
 	std::vector<VkImage> m_swapchainImages;
@@ -88,7 +91,8 @@ private:
 	VkPipelineLayout m_pipelineLayout;
 	VkPipeline m_graphicsPipeline;
 	std::vector<VkFramebuffer> m_swapchainFramebuffers;
-	VkCommandPool m_commandPool;
+	VkCommandPool m_graphicsCommandPool;
+	VkCommandPool m_transferCommandPool;
 	VkBuffer m_vertexBuffer;
 	VkDeviceMemory m_vertexBufferMemory;
 	std::vector<VkCommandBuffer> m_commandBuffers;
@@ -141,9 +145,9 @@ private:
 
 	void create_frame_buffers();
 
-	void create_command_pool();
+	void create_command_pools();
 	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
-	void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory);
+	void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkSharingMode sharingMode, VkBuffer &buffer, VkDeviceMemory &bufferMemory);
 	void copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
 	void create_sync_objects();
