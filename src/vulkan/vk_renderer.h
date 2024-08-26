@@ -106,6 +106,8 @@ private:
 	VkDeviceMemory m_vertexBufferMemory;
 	VkBuffer m_indexBuffer;
 	VkDeviceMemory m_indexBufferMemory;
+	VkImage m_textureImage;
+	VkDeviceMemory m_textureImageMemory;
 
 	std::vector<VkBuffer> m_uniformBuffers;
 	std::vector<VkDeviceMemory> m_uniformBuffersMemory;
@@ -167,11 +169,18 @@ private:
 	void create_render_pass();
 
 	void create_frame_buffers();
+	VkCommandBuffer begin_single_time_commands();
+	void end_single_time_commands(VkCommandBuffer commandBuffer);
 	void create_uniform_buffers();
 	void update_uniform_buffer(uint32_t currentImage);
 
 	void create_command_pools();
+	void create_texture_image();
+	void create_image(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
+		   VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
 	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+	void transition_image_layout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+	void copy_buffer_to_image(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 	void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkSharingMode sharingMode, VkBuffer &buffer, VkDeviceMemory &bufferMemory);
 	void copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 

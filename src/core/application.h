@@ -8,6 +8,7 @@ public:
 	Application();
 	void run();
 	void init();
+	void cleanup();
 private:
 	SDL_Window *m_window;
 	VkExtent2D m_windowExtent = { 1700 , 900 };

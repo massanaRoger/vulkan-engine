@@ -35,7 +35,10 @@ void Engine::Application::run()
 		}
 		m_renderer.draw_frame();
 	}
+}
 
+void Engine::Application::cleanup()
+{
 	m_renderer.cleanup();
 }
 

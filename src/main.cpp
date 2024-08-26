@@ -4,4 +4,5 @@ int main() {
 	Engine::Application app;
 	app.init();
 	app.run();
+	app.cleanup();
 }
