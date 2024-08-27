@@ -5,6 +5,9 @@
 #include <optional>
 #include <vector>
 #include <vulkan/vulkan_core.h>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
+#include <functional>
 
 namespace Engine {
 
@@ -66,6 +69,10 @@ struct Vertex {
 		attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
 
 		return attributeDescriptions;
+	}
+
+	bool operator==(const Vertex& other) const {
+		return pos == other.pos && color == other.color && texCoord == other.texCoord;
 	}
 };
 
@@ -131,22 +138,8 @@ private:
 
 	uint32_t m_currentFrame;
 
-	const std::vector<Vertex> vertices = {
-		{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-		{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-		{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-		{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-
-		{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-		{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-		{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-		{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-	};
-
-	const std::vector<uint16_t> indices = {
-		0, 1, 2, 2, 3, 0,
-		4, 5, 6, 6, 7, 4
-	};
+	std::vector<Vertex> m_vertices;
+	std::vector<uint32_t> m_indices;
 
 	void create_instance();
 
@@ -209,9 +202,19 @@ private:
 	void create_command_buffers();
 	void create_descriptor_pool();
 	void create_descriptor_sets();
-
+	void load_model();
 	void create_vertex_buffer();
 	void create_index_buffer();
 	uint32_t find_memory_type(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 };
+}
+
+namespace std {
+    template<> struct hash<Engine::Vertex> {
+        size_t operator()(Engine::Vertex const& vertex) const {
+            return ((hash<glm::vec3>()(vertex.pos) ^
+                    (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
+                   (hash<glm::vec2>()(vertex.texCoord) << 1);
+        }
+    };
 }

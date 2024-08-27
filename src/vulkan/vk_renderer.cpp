@@ -4,7 +4,10 @@
 #include "SDL_video.h"
 #include "vk_types.h"
 #include "vk_utils.h"
+#include <unordered_map>
 
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #include <algorithm>
@@ -43,6 +46,7 @@ void Engine::Renderer::init_vulkan(SDL_Window* window)
 	create_texture_image();
 	create_texture_image_view();
 	create_texture_sampler();
+	load_model();
 	create_vertex_buffer();
 	create_index_buffer();
 	create_uniform_buffers();
@@ -969,7 +973,7 @@ VkFormat Engine::Renderer::find_supported_format(const std::vector<VkFormat>& ca
 void Engine::Renderer::create_texture_image()
 {
 	int texWidth, texHeight, texChannels;
-	stbi_uc *pixels = stbi_load("../../textures/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+	stbi_uc *pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 	VkDeviceSize imageSize = texWidth * texHeight * 4;
 
 	if (!pixels) {
@@ -1292,16 +1296,56 @@ void Engine::Renderer::create_descriptor_sets()
 	}
 }
 
+void Engine::Renderer::load_model()
+{
+	tinyobj::attrib_t attrib;
+	std::vector<tinyobj::shape_t> shapes;
+	std::vector<tinyobj::material_t> materials;
+	std::string warn, err;
+	if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
+		std::cerr << "Failed to load model" << std::endl;
+		std::cerr << warn + err << std::endl;
+		abort();
+	}
+
+	std::unordered_map<Vertex, uint32_t> uniqueVertices{};
+
+	for (const auto& shape : shapes) {
+		for (const auto& index : shape.mesh.indices) {
+			Vertex vertex{};
+
+			vertex.pos = {
+				attrib.vertices[3 * index.vertex_index + 0],
+				attrib.vertices[3 * index.vertex_index + 1],
+				attrib.vertices[3 * index.vertex_index + 2]
+			};
+
+			vertex.texCoord = {
+				attrib.texcoords[2 * index.texcoord_index + 0],
+				1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+			};
+
+			vertex.color = {1.0f, 1.0f, 1.0f};
+			if (uniqueVertices.count(vertex) == 0) {
+				uniqueVertices[vertex] = static_cast<uint32_t>(m_vertices.size());
+				m_vertices.push_back(vertex);
+			}
+
+			m_indices.push_back(uniqueVertices[vertex]);
+		}
+	}
+}
+
 void Engine::Renderer::create_vertex_buffer()
 {
-	VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+	VkDeviceSize bufferSize = sizeof(m_vertices[0]) * m_vertices.size();
 	VkBuffer stagingBuffer;
 	VkDeviceMemory stagingBufferMemory;
 	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_SHARING_MODE_EXCLUSIVE, stagingBuffer, stagingBufferMemory);
 	
 	void* data;
 	vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
-	memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
+	memcpy(data, m_vertices.data(), static_cast<size_t>(bufferSize));
 	vkUnmapMemory(m_device, stagingBufferMemory);
 
 	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_SHARING_MODE_CONCURRENT, m_vertexBuffer, m_vertexBufferMemory);
@@ -1313,7 +1357,7 @@ void Engine::Renderer::create_vertex_buffer()
 
 void Engine::Renderer::create_index_buffer()
 {
-	VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+	VkDeviceSize bufferSize = sizeof(m_indices[0]) * m_indices.size();
 
 	VkBuffer stagingBuffer;
 	VkDeviceMemory stagingBufferMemory;
@@ -1321,7 +1365,7 @@ void Engine::Renderer::create_index_buffer()
 
 	void* data;
 	vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
-	memcpy(data, indices.data(), static_cast<size_t>(bufferSize));
+	memcpy(data, m_indices.data(), static_cast<size_t>(bufferSize));
 	vkUnmapMemory(m_device, stagingBufferMemory);
 
 	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_SHARING_MODE_EXCLUSIVE, m_indexBuffer, m_indexBufferMemory);
@@ -1406,7 +1450,7 @@ void Engine::Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint
 	VkBuffer vertexBuffers[] = { m_vertexBuffer };
 	VkDeviceSize offsets[] = { 0 };
 	vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-	vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+	vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
 	VkViewport viewport{};
 	viewport.x = 0.0f;
@@ -1423,7 +1467,7 @@ void Engine::Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint
 	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
-	vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+	vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(m_indices.size()), 1, 0, 0, 0);
 	vkCmdEndRenderPass2(commandBuffer, &subpassEndInfo);
 
 	VK_CHECK(vkEndCommandBuffer(commandBuffer));
