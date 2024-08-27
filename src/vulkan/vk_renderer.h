@@ -127,6 +127,10 @@ private:
 	VkImage m_depthImage;
 	VkDeviceMemory m_depthImageMemory;
 	VkImageView m_depthImageView;
+	VkSampleCountFlagBits m_msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+	VkImage m_colorImage;
+	VkDeviceMemory m_colorImageMemory;
+	VkImageView m_colorImageView;
 
 	std::vector<VkBuffer> m_uniformBuffers;
 	std::vector<VkDeviceMemory> m_uniformBuffersMemory;
@@ -186,13 +190,14 @@ private:
 	void update_uniform_buffer(uint32_t currentImage);
 
 	void create_command_pools();
+	void create_color_resources();
 	void create_depth_resources();
 	VkFormat find_supported_format(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 	void create_texture_image();
 	void generate_mipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
 	void create_texture_image_view();
 	void create_texture_sampler();
-	void create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageTiling tiling,
+	void create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling,
 		   VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
 	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	void transition_image_layout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
@@ -208,6 +213,8 @@ private:
 	void create_vertex_buffer();
 	void create_index_buffer();
 	uint32_t find_memory_type(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+	VkSampleCountFlagBits get_max_usable_sample_count();
 };
 }
 
