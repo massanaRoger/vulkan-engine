@@ -1,10 +1,12 @@
 #include "application.h"
 #include "SDL_events.h"
+#include "SDL_mouse.h"
 #include "SDL_video.h"
 #include "core/camera.h"
 
 #include <chrono>
 #include <SDL.h>
+#include <iostream>
 
 Engine::Application::Application(): m_renderer(Renderer::getInstance()), m_camera()
 {}
@@ -13,6 +15,7 @@ void Engine::Application::init()
 {
 	SDL_Init(SDL_INIT_VIDEO);
 	SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+	SDL_SetRelativeMouseMode(SDL_TRUE);
 
 	m_window = SDL_CreateWindow(
 		"Vulkan Engine",
@@ -39,6 +42,9 @@ void Engine::Application::run()
 			if (e.type == SDL_QUIT) {
 				m_quit = true;
 			}
+			if (e.type == SDL_MOUSEMOTION) {
+				handle_mouse_events(e);
+			}
 		}
 		process_input(deltaTime);
 		m_renderer.draw_frame(m_camera);
@@ -52,24 +58,31 @@ void Engine::Application::cleanup()
 
 void Engine::Application::process_input(float deltaTime)
 {
-	const float cameraSpeed = 1.5f * deltaTime;
 	const Uint8* keystate = SDL_GetKeyboardState(NULL);
 
 	if (keystate[SDL_SCANCODE_W]) {
-		m_camera.position += cameraSpeed * m_camera.forward;
+		m_camera.handle_keyboard_movement(Directions::Top, deltaTime);
 	}
 	if (keystate[SDL_SCANCODE_S]) {
-		m_camera.position -= cameraSpeed * m_camera.forward;
+		m_camera.handle_keyboard_movement(Directions::Bottom, deltaTime);
 	}
 	if (keystate[SDL_SCANCODE_A]) {
-		m_camera.position -= glm::normalize(glm::cross(m_camera.forward, m_camera.up)) * cameraSpeed;
+		m_camera.handle_keyboard_movement(Directions::Left, deltaTime);
 	}
 	if (keystate[SDL_SCANCODE_D]) {
-		m_camera.position += glm::normalize(glm::cross(m_camera.forward, m_camera.up)) * cameraSpeed;
+		m_camera.handle_keyboard_movement(Directions::Right, deltaTime);
 	}
 	if (keystate[SDL_SCANCODE_ESCAPE]) {
 		m_quit = true;
 	}
+}
+
+void Engine::Application::handle_mouse_events(const SDL_Event& event)
+{
+	float xoffset = event.motion.xrel;
+	float yoffset = -event.motion.yrel;
+
+	m_camera.handle_mouse_movement(xoffset, yoffset);
 }
 
 int Engine::Application::frame_buffer_callback(void* data, SDL_Event* event)

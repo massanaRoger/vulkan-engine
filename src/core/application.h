@@ -19,6 +19,7 @@ private:
 	bool m_quit = false;
 
 	void process_input(float time);
+	void handle_mouse_events(const SDL_Event& event);
 	static int frame_buffer_callback(void* data, SDL_Event* event);
 };
 }
