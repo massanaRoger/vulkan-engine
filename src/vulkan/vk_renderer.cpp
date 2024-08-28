@@ -927,10 +927,7 @@ void Renderer::update_uniform_buffer(uint32_t currentImage, const Camera& camera
 	UniformBufferObject ubo{};
 	ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 	ubo.view = camera.get_view_matrix();
-	ubo.proj = glm::perspective(glm::radians(45.0f), m_swapchainExtent.width / (float) m_swapchainExtent.height, 0.1f, 10.0f);
-
-	// Reverse because of vulkan coordinate system
-	ubo.proj[1][1] *= -1;
+	ubo.proj = camera.get_projection_matrix(m_swapchainExtent.width, m_swapchainExtent.height);
 
 	memcpy(m_uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }

@@ -6,12 +6,13 @@
 
 #include <chrono>
 #include <SDL.h>
-#include <iostream>
 
-Engine::Application::Application(): m_renderer(Renderer::getInstance()), m_camera()
+namespace Engine {
+
+Application::Application(): m_renderer(Renderer::getInstance()), m_camera()
 {}
 
-void Engine::Application::init()
+void Application::init()
 {
 	SDL_Init(SDL_INIT_VIDEO);
 	SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
@@ -29,7 +30,7 @@ void Engine::Application::init()
 	m_renderer.init_vulkan(m_window);
 }
 
-void Engine::Application::run()
+void Application::run()
 {
 	SDL_Event e;
 	float deltaTime = 0.0f;
@@ -43,7 +44,10 @@ void Engine::Application::run()
 				m_quit = true;
 			}
 			if (e.type == SDL_MOUSEMOTION) {
-				handle_mouse_events(e);
+				handle_mouse_event(e);
+			}
+			if (e.type == SDL_MOUSEWHEEL) {
+				handle_mouse_wheel_event(e);
 			}
 		}
 		process_input(deltaTime);
@@ -51,12 +55,12 @@ void Engine::Application::run()
 	}
 }
 
-void Engine::Application::cleanup()
+void Application::cleanup()
 {
 	m_renderer.cleanup();
 }
 
-void Engine::Application::process_input(float deltaTime)
+void Application::process_input(float deltaTime)
 {
 	const Uint8* keystate = SDL_GetKeyboardState(NULL);
 
@@ -77,7 +81,7 @@ void Engine::Application::process_input(float deltaTime)
 	}
 }
 
-void Engine::Application::handle_mouse_events(const SDL_Event& event)
+void Application::handle_mouse_event(const SDL_Event& event)
 {
 	float xoffset = event.motion.xrel;
 	float yoffset = -event.motion.yrel;
@@ -85,7 +89,12 @@ void Engine::Application::handle_mouse_events(const SDL_Event& event)
 	m_camera.handle_mouse_movement(xoffset, yoffset);
 }
 
-int Engine::Application::frame_buffer_callback(void* data, SDL_Event* event)
+void Application::handle_mouse_wheel_event(const SDL_Event& event)
+{
+	m_camera.handle_scroll(event.wheel.preciseY);
+}
+
+int Application::frame_buffer_callback(void* data, SDL_Event* event)
 {
 	if (event->type == SDL_WINDOWEVENT &&
 		event->window.event == SDL_WINDOWEVENT_RESIZED) {
@@ -98,4 +107,4 @@ int Engine::Application::frame_buffer_callback(void* data, SDL_Event* event)
 
 	return 0;
 }
-
+}
