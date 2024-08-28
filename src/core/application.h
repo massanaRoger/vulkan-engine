@@ -1,3 +1,5 @@
+#pragma once
+
 #include "SDL_events.h"
 #include "SDL_video.h"
 #include "vulkan/vk_renderer.h"

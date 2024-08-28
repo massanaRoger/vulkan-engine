@@ -7,6 +7,8 @@
 #include <cmath>
 #include <unordered_map>
 
+#define VMA_IMPLEMENTATION
+#include "vk_mem_alloc.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #define STB_IMAGE_IMPLEMENTATION
@@ -19,7 +21,6 @@
 #include <set>
 #include <stdlib.h>
 #include <vector>
-#include <vulkan/vulkan_core.h>
 #include <SDL_vulkan.h>
 
 Engine::Renderer& Engine::Renderer::getInstance()
@@ -36,6 +37,7 @@ void Engine::Renderer::init_vulkan(SDL_Window* window)
 	create_surface();
 	pick_physical_device();
 	create_logical_device();
+	create_allocator();
 	create_swapchain();
 	create_image_views();
 	create_render_pass();
@@ -104,31 +106,29 @@ void Engine::Renderer::cleanup()
 	cleanup_swapchain();
 
 	vkDestroyImageView(m_device, m_colorImageView, nullptr);
-	vkDestroyImage(m_device, m_colorImage, nullptr);
-	vkFreeMemory(m_device, m_colorImageMemory, nullptr);
+	vmaDestroyImage(m_allocator, m_colorImage, m_colorImageMemory);
 	vkDestroySampler(m_device, m_textureSampler, nullptr);
 	vkDestroyImageView(m_device, m_textureImageView, nullptr);
-	vkDestroyImage(m_device, m_textureImage, nullptr);
-	vkFreeMemory(m_device, m_textureImageMemory, nullptr);
+	vmaDestroyImage(m_allocator, m_textureImage, m_textureImageMemory);
 
 	vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
 	vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
 	vkDestroyRenderPass(m_device, m_renderPass, nullptr);
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-		vkDestroyBuffer(m_device, m_uniformBuffers[i], nullptr);
-		vkFreeMemory(m_device, m_uniformBuffersMemory[i], nullptr);
+		vmaUnmapMemory(m_allocator, m_uniformBuffersMemory[i]);
+		vmaDestroyBuffer(m_allocator, m_uniformBuffers[i], m_uniformBuffersMemory[i]);
 	}
 
 	vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
 
 	vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
 
-	vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
-	vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
+	vmaDestroyBuffer(m_allocator, m_vertexBuffer, m_vertexBufferMemory);
 
-	vkDestroyBuffer(m_device, m_indexBuffer, nullptr);
-	vkFreeMemory(m_device, m_indexBufferMemory, nullptr);
+	vmaDestroyBuffer(m_allocator, m_indexBuffer, m_indexBufferMemory);
+
+	vmaDestroyAllocator(m_allocator);
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 		vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
@@ -558,8 +558,8 @@ void Engine::Renderer::create_swapchain()
 void Engine::Renderer::cleanup_swapchain()
 {
 	vkDestroyImageView(m_device, m_depthImageView, nullptr);
-	vkDestroyImage(m_device, m_depthImage, nullptr);
-	vkFreeMemory(m_device, m_depthImageMemory, nullptr);
+	vmaDestroyImage(m_allocator, m_depthImage, m_depthImageMemory);
+
 	for (size_t i = 0; i < m_swapchainFramebuffers.size(); i++) {
 		vkDestroyFramebuffer(m_device, m_swapchainFramebuffers[i], nullptr);
 	}
@@ -964,7 +964,7 @@ void Engine::Renderer::create_depth_resources()
 	);
 
 	create_image(m_swapchainExtent.width, m_swapchainExtent.height, 1, m_msaaSamples, depthFormat, VK_IMAGE_TILING_OPTIMAL, 
-	      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_depthImage, m_depthImageMemory);
+	      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VMA_MEMORY_USAGE_GPU_ONLY, m_depthImage, m_depthImageMemory);
 
 	VkImageViewCreateInfo viewInfo{};
 	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -986,7 +986,7 @@ void Engine::Renderer::create_color_resources()
 
 	create_image(m_swapchainExtent.width, m_swapchainExtent.height, 1, m_msaaSamples, colorFormat,
 	      VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-	      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_colorImage, m_colorImageMemory);
+	      VMA_MEMORY_USAGE_GPU_ONLY, m_colorImage, m_colorImageMemory);
 
 	VkImageViewCreateInfo viewInfo{};
 	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -1033,18 +1033,18 @@ void Engine::Renderer::create_texture_image()
 	m_mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
 
 	VkBuffer stagingBuffer;
-	VkDeviceMemory stagingBufferMemory;
-	create_buffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+	VmaAllocation stagingBufferMemory;
+	create_buffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU,
 	      VK_SHARING_MODE_EXCLUSIVE, stagingBuffer, stagingBufferMemory);
 
 	void* data;
-	vkMapMemory(m_device, stagingBufferMemory, 0, imageSize, 0, &data);
+	vmaMapMemory(m_allocator, stagingBufferMemory, &data);
 	memcpy(data, pixels, static_cast<size_t>(imageSize));
-	vkUnmapMemory(m_device, stagingBufferMemory);
+	vmaUnmapMemory(m_allocator, stagingBufferMemory);
 	stbi_image_free(pixels);
 	create_image(texWidth, texHeight, m_mipLevels, VK_SAMPLE_COUNT_1_BIT, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, 
 	      VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-	      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_textureImage, m_textureImageMemory);
+	      VMA_MEMORY_USAGE_GPU_ONLY, m_textureImage, m_textureImageMemory);
 
 	transition_image_layout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, m_mipLevels);
 	copy_buffer_to_image(stagingBuffer, m_textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
@@ -1052,7 +1052,7 @@ void Engine::Renderer::create_texture_image()
 	generate_mipmaps(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, texWidth, texHeight, m_mipLevels);
 
 	vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-	vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+	vmaFreeMemory(m_allocator, stagingBufferMemory);
 }
 
 void Engine::Renderer::generate_mipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels)
@@ -1184,7 +1184,7 @@ void Engine::Renderer::create_texture_sampler()
 }
 
 void Engine::Renderer::create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, 
-				    VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory)
+				    VkImageUsageFlags usage, VmaMemoryUsage memoryUsage, VkImage& image, VmaAllocation& imageAllocation)
 {
 	VkImageCreateInfo imageInfo{};
 	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -1201,23 +1201,13 @@ void Engine::Renderer::create_image(uint32_t width, uint32_t height, uint32_t mi
 	imageInfo.samples = numSamples;
 	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-	if (vkCreateImage(m_device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
-		throw std::runtime_error("failed to create image!");
+	VmaAllocationCreateInfo allocInfo{};
+	allocInfo.usage = memoryUsage;
+
+	if (vmaCreateImage(m_allocator, &imageInfo, &allocInfo, &image, &imageAllocation, nullptr) != VK_SUCCESS) {
+		std::cerr << "failed to create image with VMA!" << std::endl;
+		abort();
 	}
-
-	VkMemoryRequirements memRequirements;
-	vkGetImageMemoryRequirements(m_device, image, &memRequirements);
-
-	VkMemoryAllocateInfo allocInfo{};
-	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	allocInfo.allocationSize = memRequirements.size;
-	allocInfo.memoryTypeIndex = find_memory_type(memRequirements.memoryTypeBits, properties);
-
-	if (vkAllocateMemory(m_device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
-		throw std::runtime_error("failed to allocate image memory!");
-	}
-
-	vkBindImageMemory(m_device, image, imageMemory, 0);
 }
 
 void Engine::Renderer::transition_image_layout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels)
@@ -1294,7 +1284,7 @@ void Engine::Renderer::copy_buffer_to_image(VkBuffer buffer, VkImage image, uint
 	end_single_time_commands(commandBuffer);
 }
 
-void Engine::Renderer::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkSharingMode sharingMode, VkBuffer &buffer, VkDeviceMemory &bufferMemory)
+void Engine::Renderer::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkSharingMode sharingMode, VkBuffer &buffer, VmaAllocation &bufferMemory)
 {
 	VkBufferCreateInfo bufferInfo{};
 	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1307,21 +1297,10 @@ void Engine::Renderer::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage
 		bufferInfo.queueFamilyIndexCount = 2;
 	}
 
-	if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-		throw std::runtime_error("failed to create buffer!");
-	}
+	VmaAllocationCreateInfo	allocInfo{};
+	allocInfo.usage = memoryUsage;
 
-	VkMemoryRequirements memRequirements;
-	vkGetBufferMemoryRequirements(m_device, buffer, &memRequirements);
-
-	VkMemoryAllocateInfo allocInfo{};
-	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	allocInfo.allocationSize = memRequirements.size;
-	allocInfo.memoryTypeIndex = find_memory_type(memRequirements.memoryTypeBits, properties);
-
-	VK_CHECK(vkAllocateMemory(m_device, &allocInfo, nullptr, &bufferMemory));
-
-	vkBindBufferMemory(m_device, buffer, bufferMemory, 0);
+	vmaCreateBuffer(m_allocator, &bufferInfo, &allocInfo, &buffer, &bufferMemory, nullptr);
 }
 
 VkCommandBuffer Engine::Renderer::begin_single_time_commands() {
@@ -1366,9 +1345,9 @@ void Engine::Renderer::create_uniform_buffers()
 	m_uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-		create_buffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_SHARING_MODE_EXCLUSIVE, m_uniformBuffers[i], m_uniformBuffersMemory[i]);
+		create_buffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_uniformBuffers[i], m_uniformBuffersMemory[i]);
 
-		vkMapMemory(m_device, m_uniformBuffersMemory[i], 0, bufferSize, 0, &m_uniformBuffersMapped[i]);
+		vmaMapMemory(m_allocator, m_uniformBuffersMemory[i], &m_uniformBuffersMapped[i]);
 	}
 
 }
@@ -1479,19 +1458,19 @@ void Engine::Renderer::create_vertex_buffer()
 {
 	VkDeviceSize bufferSize = sizeof(m_vertices[0]) * m_vertices.size();
 	VkBuffer stagingBuffer;
-	VkDeviceMemory stagingBufferMemory;
-	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_SHARING_MODE_EXCLUSIVE, stagingBuffer, stagingBufferMemory);
+	VmaAllocation stagingBufferMemory;
+	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, stagingBuffer, stagingBufferMemory);
 	
 	void* data;
-	vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
+	vmaMapMemory(m_allocator, stagingBufferMemory, &data);
 	memcpy(data, m_vertices.data(), static_cast<size_t>(bufferSize));
-	vkUnmapMemory(m_device, stagingBufferMemory);
+	vmaUnmapMemory(m_allocator, stagingBufferMemory);
 
-	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_SHARING_MODE_CONCURRENT, m_vertexBuffer, m_vertexBufferMemory);
+	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SHARING_MODE_CONCURRENT, m_vertexBuffer, m_vertexBufferMemory);
 	copy_buffer(stagingBuffer, m_vertexBuffer, bufferSize);
 
 	vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-	vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+	vmaFreeMemory(m_allocator, stagingBufferMemory);
 }
 
 void Engine::Renderer::create_index_buffer()
@@ -1499,20 +1478,20 @@ void Engine::Renderer::create_index_buffer()
 	VkDeviceSize bufferSize = sizeof(m_indices[0]) * m_indices.size();
 
 	VkBuffer stagingBuffer;
-	VkDeviceMemory stagingBufferMemory;
-	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_SHARING_MODE_EXCLUSIVE, stagingBuffer, stagingBufferMemory);
+	VmaAllocation stagingBufferMemory;
+	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,  VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, stagingBuffer, stagingBufferMemory);
 
 	void* data;
-	vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
+	vmaMapMemory(m_allocator, stagingBufferMemory, &data);
 	memcpy(data, m_indices.data(), static_cast<size_t>(bufferSize));
-	vkUnmapMemory(m_device, stagingBufferMemory);
+	vmaUnmapMemory(m_allocator, stagingBufferMemory);
 
-	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_SHARING_MODE_EXCLUSIVE, m_indexBuffer, m_indexBufferMemory);
+	create_buffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SHARING_MODE_EXCLUSIVE, m_indexBuffer, m_indexBufferMemory);
 
 	copy_buffer(stagingBuffer, m_indexBuffer, bufferSize);
 
 	vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-	vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+	vmaFreeMemory(m_allocator, stagingBufferMemory);
 }
 
 void Engine::Renderer::copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
@@ -1649,3 +1628,12 @@ VkSampleCountFlagBits Engine::Renderer::get_max_usable_sample_count()
 	return VK_SAMPLE_COUNT_1_BIT;
 }
 
+void Engine::Renderer::create_allocator()
+{
+	VmaAllocatorCreateInfo allocatorInfo = {};
+	allocatorInfo.physicalDevice = m_physicalDevice;
+	allocatorInfo.device = m_device;
+	allocatorInfo.instance = m_instance;
+
+	vmaCreateAllocator(&allocatorInfo, &m_allocator);
+}

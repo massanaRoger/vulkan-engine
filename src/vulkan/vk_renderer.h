@@ -1,13 +1,15 @@
+#pragma once
+
 #include "SDL_video.h"
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <vector>
-#include <vulkan/vulkan_core.h>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 #include <functional>
+#include <vk_mem_alloc.h>
 
 namespace Engine {
 
@@ -116,24 +118,25 @@ private:
 	VkCommandPool m_graphicsCommandPool;
 	VkCommandPool m_transferCommandPool;
 	VkBuffer m_vertexBuffer;
-	VkDeviceMemory m_vertexBufferMemory;
+	VmaAllocation m_vertexBufferMemory;
 	VkBuffer m_indexBuffer;
-	VkDeviceMemory m_indexBufferMemory;
+	VmaAllocation m_indexBufferMemory;
 	VkImage m_textureImage;
-	VkDeviceMemory m_textureImageMemory;
+	VmaAllocation m_textureImageMemory;
 	VkImageView m_textureImageView;
 	VkSampler m_textureSampler;
 	uint32_t m_mipLevels;
 	VkImage m_depthImage;
-	VkDeviceMemory m_depthImageMemory;
+	VmaAllocation m_depthImageMemory;
 	VkImageView m_depthImageView;
 	VkSampleCountFlagBits m_msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 	VkImage m_colorImage;
-	VkDeviceMemory m_colorImageMemory;
+	VmaAllocation  m_colorImageMemory;
 	VkImageView m_colorImageView;
+	VmaAllocator m_allocator;
 
 	std::vector<VkBuffer> m_uniformBuffers;
-	std::vector<VkDeviceMemory> m_uniformBuffersMemory;
+	std::vector<VmaAllocation> m_uniformBuffersMemory;
 	std::vector<void*> m_uniformBuffersMapped;
 
 	std::vector<VkCommandBuffer> m_commandBuffers;
@@ -197,12 +200,12 @@ private:
 	void generate_mipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
 	void create_texture_image_view();
 	void create_texture_sampler();
-	void create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling,
-		   VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
+	void create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, 
+				     VkImageUsageFlags usage, VmaMemoryUsage memoryUsage, VkImage& image, VmaAllocation& imageAllocation);
 	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	void transition_image_layout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
 	void copy_buffer_to_image(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
-	void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkSharingMode sharingMode, VkBuffer &buffer, VkDeviceMemory &bufferMemory);
+	void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkSharingMode sharingMode, VkBuffer &buffer, VmaAllocation &bufferMemory);
 	void copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
 	void create_sync_objects();
@@ -215,6 +218,7 @@ private:
 	uint32_t find_memory_type(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
 	VkSampleCountFlagBits get_max_usable_sample_count();
+	void create_allocator();
 };
 }
 
