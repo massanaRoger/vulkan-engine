@@ -1,9 +1,12 @@
 #include "application.h"
 #include "SDL_events.h"
 #include "SDL_video.h"
+#include "core/camera.h"
+
+#include <chrono>
 #include <SDL.h>
 
-Engine::Application::Application(): m_renderer(Renderer::getInstance())
+Engine::Application::Application(): m_renderer(Renderer::getInstance()), m_camera()
 {}
 
 void Engine::Application::init()
@@ -26,20 +29,47 @@ void Engine::Application::init()
 void Engine::Application::run()
 {
 	SDL_Event e;
-	bool quit = false;
-	while(!quit) {
+	float deltaTime = 0.0f;
+	auto lastFrame = std::chrono::high_resolution_clock::now();
+	while(!m_quit) {
+		auto currentFrame = std::chrono::high_resolution_clock::now();
+		deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(currentFrame - lastFrame).count();
+		lastFrame = currentFrame;
 		while (SDL_PollEvent(&e) != 0) {
 			if (e.type == SDL_QUIT) {
-				quit = true;
+				m_quit = true;
 			}
 		}
-		m_renderer.draw_frame();
+		process_input(deltaTime);
+		m_renderer.draw_frame(m_camera);
 	}
 }
 
 void Engine::Application::cleanup()
 {
 	m_renderer.cleanup();
+}
+
+void Engine::Application::process_input(float deltaTime)
+{
+	const float cameraSpeed = 1.5f * deltaTime;
+	const Uint8* keystate = SDL_GetKeyboardState(NULL);
+
+	if (keystate[SDL_SCANCODE_W]) {
+		m_camera.position += cameraSpeed * m_camera.forward;
+	}
+	if (keystate[SDL_SCANCODE_S]) {
+		m_camera.position -= cameraSpeed * m_camera.forward;
+	}
+	if (keystate[SDL_SCANCODE_A]) {
+		m_camera.position -= glm::normalize(glm::cross(m_camera.forward, m_camera.up)) * cameraSpeed;
+	}
+	if (keystate[SDL_SCANCODE_D]) {
+		m_camera.position += glm::normalize(glm::cross(m_camera.forward, m_camera.up)) * cameraSpeed;
+	}
+	if (keystate[SDL_SCANCODE_ESCAPE]) {
+		m_quit = true;
+	}
 }
 
 int Engine::Application::frame_buffer_callback(void* data, SDL_Event* event)
@@ -55,3 +85,4 @@ int Engine::Application::frame_buffer_callback(void* data, SDL_Event* event)
 
 	return 0;
 }
+

@@ -2,6 +2,8 @@
 add_executable (engine
   core/application.cpp
   core/application.h
+  core/camera.h
+  core/camera.cpp
   vulkan/vk_renderer.h
   vulkan/vk_renderer.cpp
   vulkan/vk_types.h

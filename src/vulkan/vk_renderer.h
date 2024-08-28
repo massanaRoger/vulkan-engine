@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SDL_video.h"
+#include "core/camera.h"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -83,7 +84,7 @@ public:
 	static Renderer& getInstance();
 
 	void init_vulkan(SDL_Window* window);
-	void draw_frame();
+	void draw_frame(const Camera& camera);
 	void cleanup();
 
 	Renderer(const Renderer&) = delete;
@@ -190,7 +191,7 @@ private:
 	VkCommandBuffer begin_single_time_commands();
 	void end_single_time_commands(VkCommandBuffer commandBuffer);
 	void create_uniform_buffers();
-	void update_uniform_buffer(uint32_t currentImage);
+	void update_uniform_buffer(uint32_t currentImage, const Camera& camera);
 
 	void create_command_pools();
 	void create_color_resources();

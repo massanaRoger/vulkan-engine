@@ -15,7 +15,10 @@ private:
 	SDL_Window *m_window;
 	VkExtent2D m_windowExtent = { 1700 , 900 };
 	Renderer& m_renderer;
+	Camera m_camera;
+	bool m_quit = false;
 
+	void process_input(float time);
 	static int frame_buffer_callback(void* data, SDL_Event* event);
 };
 }
