@@ -54,7 +54,8 @@ void Renderer::init_vulkan(SDL_Window* window)
 	create_texture_image();
 	create_texture_image_view();
 	create_texture_sampler();
-	load_model();
+	load_gltf_meshes(getInstance(), "../../models/pony_cartoon.glb");
+	// load_model();
 	create_vertex_buffer();
 	create_index_buffer();
 	create_uniform_buffers();
@@ -926,6 +927,7 @@ void Renderer::update_uniform_buffer(uint32_t currentImage, const Camera& camera
 {
 	UniformBufferObject ubo{};
 	ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+	ubo.model = glm::scale(ubo.model, glm::vec3(0.01f));
 	ubo.view = camera.get_view_matrix();
 	ubo.proj = camera.get_projection_matrix(m_swapchainExtent.width, m_swapchainExtent.height);
 
@@ -1633,4 +1635,13 @@ void Renderer::create_allocator()
 
 	vmaCreateAllocator(&allocatorInfo, &m_allocator);
 }
+
+
+void Renderer::upload_mesh(std::vector<uint32_t>& indices, std::vector<Vertex>& vertices)
+{
+	m_vertices = vertices;
+	m_indices = indices;
+}
+
 };
+

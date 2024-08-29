@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
@@ -15,6 +16,29 @@
 namespace Engine {
 
 const int MAX_FRAMES_IN_FLIGHT=2;
+
+struct GeoSurface {
+	uint32_t startIndex;
+	uint32_t count;
+};
+
+struct AllocatedBuffer {
+    VkBuffer buffer;
+    VmaAllocation allocation;
+    VmaAllocationInfo info;
+};
+
+struct GPUMeshBuffers {
+    AllocatedBuffer indexBuffer;
+    AllocatedBuffer vertexBuffer;
+    VkDeviceAddress vertexBufferAddress;
+};
+
+struct MeshAsset {
+	std::string name;
+	std::vector<GeoSurface> surfaces;
+	GPUMeshBuffers meshBuffers;
+};
 
 struct QueueFamilyIndices {
 	std::optional<uint32_t> graphicsFamily;
@@ -41,6 +65,7 @@ struct UniformBufferObject {
 struct Vertex {
 	glm::vec3 pos;
 	glm::vec3 color;
+	glm::vec3 normal;
 	glm::vec2 texCoord;
 
 	static VkVertexInputBindingDescription get_binding_description()
@@ -85,6 +110,7 @@ public:
 
 	void init_vulkan(SDL_Window* window);
 	void draw_frame(const Camera& camera);
+	void upload_mesh(std::vector<uint32_t>& indices, std::vector<Vertex>& vertices);
 	void cleanup();
 
 	Renderer(const Renderer&) = delete;
