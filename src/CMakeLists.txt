@@ -9,6 +9,8 @@ add_executable (engine
   vulkan/vk_types.h
   vulkan/vk_utils.h
   vulkan/vk_utils.cpp
+  vulkan/vk_descriptors.h
+  vulkan/vk_descriptors.cpp
   main.cpp
 )
 

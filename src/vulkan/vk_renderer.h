@@ -2,6 +2,7 @@
 
 #include "SDL_video.h"
 #include "core/camera.h"
+#include "vulkan/vk_descriptors.h"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -137,7 +138,8 @@ private:
 	std::vector<VkImageView> m_swapchainImageViews;
 	VkRenderPass m_renderPass;
 	VkDescriptorSetLayout m_descriptorSetLayout;
-	VkDescriptorPool m_descriptorPool;
+	DescriptorAllocatorGrowable m_descriptorPool;
+	DescriptorWriter m_descriptorWriter;
 	std::vector<VkDescriptorSet> m_descriptorSets;
 	VkPipelineLayout m_pipelineLayout;
 	VkPipeline m_graphicsPipeline;
