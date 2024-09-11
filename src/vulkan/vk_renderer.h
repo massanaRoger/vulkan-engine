@@ -3,18 +3,21 @@
 #include "SDL_video.h"
 #include "core/camera.h"
 #include "vulkan/vk_descriptors.h"
+#include "vulkan/vk_types.h"
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
 #include <vector>
+#include <vulkan/vulkan_core.h>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 #include <functional>
-#include <vk_mem_alloc.h>
 
 namespace Engine {
+
+class Renderer;
 
 const int MAX_FRAMES_IN_FLIGHT=2;
 
@@ -26,13 +29,21 @@ struct GeoSurface {
 struct AllocatedBuffer {
     VkBuffer buffer;
     VmaAllocation allocation;
-    VmaAllocationInfo info;
 };
 
 struct GPUMeshBuffers {
     AllocatedBuffer indexBuffer;
     AllocatedBuffer vertexBuffer;
     VkDeviceAddress vertexBufferAddress;
+};
+
+struct GPUSceneData {
+    glm::mat4 view;
+    glm::mat4 proj;
+    glm::mat4 viewproj;
+    glm::vec4 ambientColor;
+    glm::vec4 sunlightDirection; // w for sun power
+    glm::vec4 sunlightColor;
 };
 
 struct MeshAsset {
@@ -105,6 +116,37 @@ struct Vertex {
 	}
 };
 
+class GLTFMetallic_Roughness {
+public:
+	MaterialPipeline opaquePipeline;
+	MaterialPipeline transparentPipeline;
+
+	VkDescriptorSetLayout materialLayout;
+
+	struct MaterialConstants {
+		glm::vec4 colorFactors;
+		glm::vec4 metal_rough_factors;
+		//padding, we need it anyway for uniform buffers
+		glm::vec4 extra[14];
+	};
+
+	struct MaterialResources {
+		AllocatedImage colorImage;
+		VkSampler colorSampler;
+		AllocatedImage metalRoughImage;
+		VkSampler metalRoughSampler;
+		VkBuffer dataBuffer;
+		uint32_t dataBufferOffset;
+	};
+
+	DescriptorWriter writer;
+
+	void build_pipelines(Renderer& renderer);
+	void clear_resources(VkDevice device);
+
+	MaterialInstance write_material(VkDevice device, MaterialPass pass, const MaterialResources& resources, DescriptorAllocatorGrowable& descriptorAllocator);
+};
+
 class Renderer {
 public:
 	static Renderer& getInstance();
@@ -112,12 +154,18 @@ public:
 	void init_vulkan(SDL_Window* window);
 	void draw_frame(const Camera& camera);
 	void upload_mesh(std::vector<uint32_t>& indices, std::vector<Vertex>& vertices);
+	[[nodiscard]] VkDescriptorSetLayout get_gpu_scene_data_descriptor_layout() const;
+	[[nodiscard]] VkDescriptorSetLayout get_material_descriptor_layout() const;
 	void cleanup();
 
 	Renderer(const Renderer&) = delete;
 	Renderer& operator=(const Renderer&) = delete;
 
 	bool frameBufferResized = false;
+	VkDevice device;
+	VkExtent2D swapchainExtent;
+	VkRenderPass renderPass;
+	VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 private:
 	Renderer() = default;
 
@@ -125,7 +173,6 @@ private:
 	VkInstance m_instance;
 	VkDebugUtilsMessengerEXT m_debugMessenger;
 	VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
-	VkDevice m_device;
 	VkQueue m_graphicsQueue;
 	VkQueue m_presentQueue;
 	VkQueue m_transferQueue;
@@ -134,15 +181,13 @@ private:
 	VkSwapchainKHR m_swapchain;
 	std::vector<VkImage> m_swapchainImages;
 	VkFormat m_swapchainImageFormat;
-	VkExtent2D m_swapchainExtent;
 	std::vector<VkImageView> m_swapchainImageViews;
-	VkRenderPass m_renderPass;
-	VkDescriptorSetLayout m_descriptorSetLayout;
-	DescriptorAllocatorGrowable m_descriptorPool;
+	VkDescriptorSetLayout m_gpuSceneDataDescriptorLayout;
+	VkDescriptorSetLayout m_materialDescriptorLayout;
+	std::vector<DescriptorAllocatorGrowable> m_descriptors;
+	DescriptorAllocatorGrowable m_globalDescriptorAllocator;
 	DescriptorWriter m_descriptorWriter;
 	std::vector<VkDescriptorSet> m_descriptorSets;
-	VkPipelineLayout m_pipelineLayout;
-	VkPipeline m_graphicsPipeline;
 	std::vector<VkFramebuffer> m_swapchainFramebuffers;
 	VkCommandPool m_graphicsCommandPool;
 	VkCommandPool m_transferCommandPool;
@@ -158,11 +203,21 @@ private:
 	VkImage m_depthImage;
 	VmaAllocation m_depthImageMemory;
 	VkImageView m_depthImageView;
-	VkSampleCountFlagBits m_msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 	VkImage m_colorImage;
 	VmaAllocation  m_colorImageMemory;
 	VkImageView m_colorImageView;
 	VmaAllocator m_allocator;
+
+	MaterialInstance m_defaultData;
+	GLTFMetallic_Roughness m_metalRoughMaterial;
+
+	AllocatedImage m_whiteImage;
+	AllocatedImage m_blackImage;
+	AllocatedImage m_greyImage;
+	AllocatedImage m_errorCheckerboardImage;
+
+	VkSampler m_defaultSamplerLinear;
+	VkSampler m_defaultSamplerNearest;
 
 	std::vector<VkBuffer> m_uniformBuffers;
 	std::vector<VmaAllocation> m_uniformBuffersMemory;
@@ -174,6 +229,7 @@ private:
 	std::vector<VkFence> m_inFlightFences;
 
 	uint32_t m_currentFrame;
+	GPUSceneData m_sceneData;
 
 	std::vector<Vertex> m_vertices;
 	std::vector<uint32_t> m_indices;
@@ -211,9 +267,10 @@ private:
 	void create_descriptor_set_layout();
 
 	void create_graphics_pipeline();
-	VkShaderModule create_shader_module(const std::vector<char>& code);
 
 	void create_render_pass();
+
+	void init_default_data();
 
 	void create_frame_buffers();
 	VkCommandBuffer begin_single_time_commands();
@@ -230,7 +287,9 @@ private:
 	void create_texture_image_view();
 	void create_texture_sampler();
 	void create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, 
-				     VkImageUsageFlags usage, VmaMemoryUsage memoryUsage, VkImage& image, VmaAllocation& imageAllocation);
+		   VkImageUsageFlags usage, VmaMemoryUsage memoryUsage, VkImage& image, VmaAllocation& imageAllocation);
+	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped);
+	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped);
 	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	void transition_image_layout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
 	void copy_buffer_to_image(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);

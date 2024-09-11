@@ -191,4 +191,19 @@ std::optional<std::vector<MeshAsset>> load_gltf_meshes(Renderer& renderer, std::
 
 	return meshes;
 }
+
+VkShaderModule create_shader_module(VkDevice device, const std::vector<char>& code)
+{
+
+	VkShaderModuleCreateInfo createInfo{};
+	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	createInfo.codeSize = code.size();
+	createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+
+	VkShaderModule shaderModule;
+	VK_CHECK(vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule));
+
+	return shaderModule;
+}
+
 }
