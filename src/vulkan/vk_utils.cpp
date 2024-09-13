@@ -76,7 +76,7 @@ std::vector<char> read_file(const std::string& filename) {
 	return buffer;
 }
 
-std::optional<std::vector<MeshAsset>> load_gltf_meshes(Renderer& renderer, std::filesystem::path filePath)
+std::optional<std::vector<MeshAsset*>> load_gltf_meshes(Renderer& renderer, std::filesystem::path filePath)
 {
 	std::cout << "Loading GLTF: " << filePath << std::endl;
 	fastgltf::GltfDataBuffer data;
@@ -95,16 +95,16 @@ std::optional<std::vector<MeshAsset>> load_gltf_meshes(Renderer& renderer, std::
 		return{};
 	}
 
-	std::vector<MeshAsset> meshes;
+	std::vector<MeshAsset*> meshes;
 
 	// use same vector for all meshes so there are less reallocations
 	std::vector<uint32_t> indices;
 	std::vector<Vertex> vertices;
 
 	for (fastgltf::Mesh &mesh : gltf.meshes) {
-		MeshAsset newMesh;
+		MeshAsset* newMesh = new MeshAsset();
 
-		newMesh.name = mesh.name;
+		newMesh->name = mesh.name;
 
 		// Clear mesh arrays after each mesh
 		for (auto &&p : mesh.primitives) {
@@ -173,7 +173,7 @@ std::optional<std::vector<MeshAsset>> load_gltf_meshes(Renderer& renderer, std::
 						  });
 			}
 
-			newMesh.surfaces.push_back(newSurface);
+			newMesh->surfaces.push_back(newSurface);
 		}
 
 		// Display vertex normals
@@ -185,7 +185,7 @@ std::optional<std::vector<MeshAsset>> load_gltf_meshes(Renderer& renderer, std::
 		}
 
 		//newMesh.meshBuffers = renderer.upload_mesh(indices, vertices);
-		renderer.upload_mesh(indices, vertices);
+		newMesh->meshBuffers = renderer.upload_mesh(indices, vertices);
 		meshes.emplace_back(newMesh);
 	}
 

@@ -4,6 +4,7 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/transform.hpp>
 
 #include <cstdint>
 #include <fmt/core.h>
@@ -65,6 +66,35 @@ struct AllocatedImage {
 struct GPUDrawPushConstants {
     glm::mat4 worldMatrix;
     VkDeviceAddress vertexBuffer;
+};
+
+struct DrawContext;
+
+class IRenderable {
+	virtual void draw(const glm::mat4& topMatrix, DrawContext& ctx) = 0;
+};
+
+struct Node : public IRenderable {
+	Node* parent;
+	std::vector<Node*> children;
+
+	glm::mat4 localTransform;
+	glm::mat4 worldTransform;
+
+	void refreshTransform(const glm::mat4& parentMatrix)
+	{
+		worldTransform = parentMatrix * localTransform;
+		for (auto c : children) {
+			c->refreshTransform(worldTransform);
+		}
+	}
+
+	virtual void draw(const glm::mat4& topMatrix, DrawContext& ctx)
+	{
+		for (auto& c : children) {
+			c->draw(topMatrix, ctx);
+		}
+	}
 };
 
 #ifdef NDEBUG

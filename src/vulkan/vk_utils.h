@@ -15,7 +15,7 @@ std::vector<const char*> get_required_extensions(SDL_Window* window);
 
 std::vector<char> read_file(const std::string& filename);
 
-std::optional<std::vector<MeshAsset>> load_gltf_meshes(Renderer& renderer, std::filesystem::path filePath);
+std::optional<std::vector<MeshAsset*>> load_gltf_meshes(Renderer& renderer, std::filesystem::path filePath);
 
 VkShaderModule create_shader_module(VkDevice device, const std::vector<char>& code);
 }

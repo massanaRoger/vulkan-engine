@@ -8,7 +8,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <span>
+#include <string>
+#include <unordered_map>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 #define GLM_ENABLE_EXPERIMENTAL
@@ -21,9 +22,13 @@ class Renderer;
 
 const int MAX_FRAMES_IN_FLIGHT=2;
 
+struct GLTFMaterial {
+	MaterialInstance data;
+};
 struct GeoSurface {
 	uint32_t startIndex;
 	uint32_t count;
+	GLTFMaterial* material;
 };
 
 struct AllocatedBuffer {
@@ -147,13 +152,25 @@ public:
 	MaterialInstance write_material(VkDevice device, MaterialPass pass, const MaterialResources& resources, DescriptorAllocatorGrowable& descriptorAllocator);
 };
 
+struct MeshNode : public Node {
+
+	MeshAsset* mesh;
+
+	virtual void draw(const glm::mat4& topMatrix, DrawContext& ctx) override;
+};
+
+struct DrawContext {
+	std::vector<RenderObject> opaqueSurfaces;
+};
+
+
 class Renderer {
 public:
 	static Renderer& getInstance();
 
 	void init_vulkan(SDL_Window* window);
 	void draw_frame(const Camera& camera);
-	void upload_mesh(std::vector<uint32_t>& indices, std::vector<Vertex>& vertices);
+	GPUMeshBuffers upload_mesh(std::vector<uint32_t>& indices, std::vector<Vertex>& vertices);
 	[[nodiscard]] VkDescriptorSetLayout get_gpu_scene_data_descriptor_layout() const;
 	[[nodiscard]] VkDescriptorSetLayout get_material_descriptor_layout() const;
 	void cleanup();
@@ -187,18 +204,9 @@ private:
 	std::vector<DescriptorAllocatorGrowable> m_descriptors;
 	DescriptorAllocatorGrowable m_globalDescriptorAllocator;
 	DescriptorWriter m_descriptorWriter;
-	std::vector<VkDescriptorSet> m_descriptorSets;
 	std::vector<VkFramebuffer> m_swapchainFramebuffers;
 	VkCommandPool m_graphicsCommandPool;
 	VkCommandPool m_transferCommandPool;
-	VkBuffer m_vertexBuffer;
-	VmaAllocation m_vertexBufferMemory;
-	VkBuffer m_indexBuffer;
-	VmaAllocation m_indexBufferMemory;
-	VkImage m_textureImage;
-	VmaAllocation m_textureImageMemory;
-	VkImageView m_textureImageView;
-	VkSampler m_textureSampler;
 	uint32_t m_mipLevels;
 	VkImage m_depthImage;
 	VmaAllocation m_depthImageMemory;
@@ -231,8 +239,12 @@ private:
 	uint32_t m_currentFrame;
 	GPUSceneData m_sceneData;
 
-	std::vector<Vertex> m_vertices;
-	std::vector<uint32_t> m_indices;
+	DrawContext m_mainDrawContext;
+	std::unordered_map<std::string, Node*> m_loadedNodes;
+
+	std::vector<MeshAsset*> m_testMeshes;
+
+	void update_scene();
 
 	void create_instance();
 
@@ -282,10 +294,7 @@ private:
 	void create_color_resources();
 	void create_depth_resources();
 	VkFormat find_supported_format(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
-	void create_texture_image();
 	void generate_mipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
-	void create_texture_image_view();
-	void create_texture_sampler();
 	void create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, 
 		   VkImageUsageFlags usage, VmaMemoryUsage memoryUsage, VkImage& image, VmaAllocation& imageAllocation);
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped);
