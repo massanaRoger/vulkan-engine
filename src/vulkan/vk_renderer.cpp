@@ -191,8 +191,8 @@ void Renderer::cleanup()
 
 	cleanup_swapchain();
 
-	vkDestroyImageView(device, m_colorImageView, nullptr);
-	vmaDestroyImage(m_allocator, m_colorImage, m_colorImageMemory);
+	vkDestroyImageView(device, m_drawImage.imageView, nullptr);
+	vmaDestroyImage(m_allocator, m_drawImage.image, m_drawImage.allocation);
 
 	vkDestroyRenderPass(device, renderPass, nullptr);
 
@@ -251,7 +251,7 @@ void Renderer::draw_frame(const Camera& camera)
 	vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
 	record_command_buffer(m_commandBuffers[m_currentFrame], imageIndex);
 
-	update_uniform_buffer(m_currentFrame, camera);
+	// update_uniform_buffer(m_currentFrame, camera);
 	
 	VkSubmitInfo submitInfo{};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -474,10 +474,15 @@ void Renderer::create_logical_device()
 	VkPhysicalDeviceFeatures deviceFeatures{};
 	deviceFeatures.samplerAnisotropy = VK_TRUE;
 
+	VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures = {};
+	bufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+	bufferDeviceAddressFeatures.bufferDeviceAddress = VK_TRUE;
+
 	VkPhysicalDeviceVulkan12Features vulkan12Features{};
 	vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
 	vulkan12Features.bufferDeviceAddress = VK_TRUE;  // Enable the bufferDeviceAddress feature
-	//
+	bufferDeviceAddressFeatures.pNext = &bufferDeviceAddressFeatures;
+
 	VkDeviceCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
@@ -652,8 +657,8 @@ void Renderer::create_swapchain()
 
 void Renderer::cleanup_swapchain()
 {
-	vkDestroyImageView(device, m_depthImageView, nullptr);
-	vmaDestroyImage(m_allocator, m_depthImage, m_depthImageMemory);
+	vkDestroyImageView(device, m_depthImage.imageView, nullptr);
+	vmaDestroyImage(m_allocator, m_depthImage.image, m_depthImage.allocation);
 
 	for (size_t i = 0; i < m_swapchainFramebuffers.size(); i++) {
 		vkDestroyFramebuffer(device, m_swapchainFramebuffers[i], nullptr);
@@ -792,8 +797,6 @@ void Renderer::create_render_pass()
 	depthAttachment.samples = msaaSamples;
 	depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
@@ -853,8 +856,8 @@ void Renderer::create_frame_buffers()
 	m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
 	for (size_t i = 0; i < m_swapchainFramebuffers.size(); i++) {
 		std::array<VkImageView, 3> attachments = {
-			m_colorImageView,
-			m_depthImageView,
+			m_drawImage.imageView,
+			m_depthImage.imageView,
 			m_swapchainImageViews[i],
 		};
 
@@ -910,11 +913,11 @@ void Renderer::create_depth_resources()
 	);
 
 	create_image(swapchainExtent.width, swapchainExtent.height, 1, msaaSamples, depthFormat, VK_IMAGE_TILING_OPTIMAL, 
-	      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VMA_MEMORY_USAGE_GPU_ONLY, m_depthImage, m_depthImageMemory);
+	      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VMA_MEMORY_USAGE_GPU_ONLY, m_depthImage.image, m_depthImage.allocation);
 
 	VkImageViewCreateInfo viewInfo{};
 	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	viewInfo.image = m_depthImage;
+	viewInfo.image = m_depthImage.image;
 	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	viewInfo.format = depthFormat;
 	viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -923,7 +926,7 @@ void Renderer::create_depth_resources()
 	viewInfo.subresourceRange.baseArrayLayer = 0;
 	viewInfo.subresourceRange.layerCount = 1;
 
-	vkCreateImageView(device, &viewInfo, nullptr, &m_depthImageView);
+	vkCreateImageView(device, &viewInfo, nullptr, &m_depthImage.imageView);
 }
 
 void Renderer::create_color_resources()
@@ -932,11 +935,11 @@ void Renderer::create_color_resources()
 
 	create_image(swapchainExtent.width, swapchainExtent.height, 1, msaaSamples, colorFormat,
 	      VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-	      VMA_MEMORY_USAGE_GPU_ONLY, m_colorImage, m_colorImageMemory);
+	      VMA_MEMORY_USAGE_GPU_ONLY, m_drawImage.image, m_drawImage.allocation);
 
 	VkImageViewCreateInfo viewInfo{};
 	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	viewInfo.image = m_colorImage;
+	viewInfo.image = m_drawImage.image;
 	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	viewInfo.format = colorFormat;
 	viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -944,7 +947,7 @@ void Renderer::create_color_resources()
 	viewInfo.subresourceRange.levelCount = 1;
 	viewInfo.subresourceRange.baseArrayLayer = 0;
 	viewInfo.subresourceRange.layerCount = 1;
-	vkCreateImageView(device, &viewInfo, nullptr, &m_colorImageView);
+	vkCreateImageView(device, &viewInfo, nullptr, &m_drawImage.imageView);
 
 }
 
@@ -1494,6 +1497,7 @@ void Renderer::create_allocator()
 	allocatorInfo.physicalDevice = m_physicalDevice;
 	allocatorInfo.device = device;
 	allocatorInfo.instance = m_instance;
+	allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 
 	vmaCreateAllocator(&allocatorInfo, &m_allocator);
 }
@@ -1509,18 +1513,21 @@ GPUMeshBuffers Renderer::upload_mesh(std::vector<uint32_t>& indices, std::vector
 	VkBuffer vertexStagingBuffer;
 	VmaAllocation vertexStagingBufferMemory;
 	create_buffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, vertexStagingBuffer, vertexStagingBufferMemory);
-	
+
 	void* vertexData;
 	vmaMapMemory(m_allocator, vertexStagingBufferMemory, &vertexData);
 	memcpy(vertexData, vertices.data(), static_cast<size_t>(vertexBufferSize));
 	vmaUnmapMemory(m_allocator, vertexStagingBufferMemory);
 
-	create_buffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SHARING_MODE_CONCURRENT, newSurface.vertexBuffer.buffer, newSurface.vertexBuffer.allocation);
+	create_buffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SHARING_MODE_CONCURRENT, newSurface.vertexBuffer.buffer, newSurface.vertexBuffer.allocation);
+
+	VkBufferDeviceAddressInfo deviceAddressInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = newSurface.vertexBuffer.buffer };
+	newSurface.vertexBufferAddress = vkGetBufferDeviceAddress(device, &deviceAddressInfo);
+
 	copy_buffer(vertexStagingBuffer, newSurface.vertexBuffer.buffer, vertexBufferSize);
 
 	vkDestroyBuffer(device, vertexStagingBuffer, nullptr);
 	vmaFreeMemory(m_allocator, vertexStagingBufferMemory);
-
 
 	VkBuffer indexStagingBuffer;
 	VmaAllocation indexStagingBufferMemory;
@@ -1549,7 +1556,7 @@ void Renderer::update_scene()
 
 	m_sceneData.view = glm::translate(glm::vec3{ 0,0,-5 });
 	// camera projection
-	m_sceneData.proj = glm::perspective(glm::radians(70.f), (float)swapchainExtent.width / (float)swapchainExtent.height, 10000.f, 0.1f);
+	m_sceneData.proj = glm::perspective(glm::radians(70.f), (float)swapchainExtent.width / (float)swapchainExtent.height, 0.1f, 10000.f);
 
 	// invert the Y direction on projection matrix so that we are more similar
 	// to opengl and gltf axis
@@ -1633,7 +1640,7 @@ void GLTFMetallic_Roughness::build_pipelines(Renderer& renderer)
 	viewport.width = (float) renderer.swapchainExtent.width;
 	viewport.height = (float) renderer.swapchainExtent.height;
 	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
 
 	VkRect2D scissor{};
 	scissor.offset = { 0, 0 };
@@ -1711,9 +1718,13 @@ void GLTFMetallic_Roughness::build_pipelines(Renderer& renderer)
 	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 	depthStencil.depthTestEnable = VK_TRUE;
 	depthStencil.depthWriteEnable = VK_TRUE;
-	depthStencil.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
+	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
 	depthStencil.depthBoundsTestEnable = VK_FALSE;
 	depthStencil.stencilTestEnable = VK_FALSE;
+	depthStencil.front = {};
+	depthStencil.back = {};
+	depthStencil.minDepthBounds = 0.f;
+	depthStencil.maxDepthBounds = 1.f;
 
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
 
@@ -1745,7 +1756,7 @@ void GLTFMetallic_Roughness::build_pipelines(Renderer& renderer)
 
 	depthStencil.depthTestEnable = VK_TRUE;
 	depthStencil.depthWriteEnable =	VK_FALSE;
-	depthStencil.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
+	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
 	depthStencil.depthBoundsTestEnable = VK_FALSE;
 	depthStencil.stencilTestEnable = VK_FALSE;
 	depthStencil.front = {};
@@ -1798,6 +1809,8 @@ void MeshNode::draw(const glm::mat4& topMatrix, DrawContext &ctx)
 		
 		ctx.opaqueSurfaces.push_back(def);
 	}
+
+	Node::draw(topMatrix, ctx);
 }
 
 };

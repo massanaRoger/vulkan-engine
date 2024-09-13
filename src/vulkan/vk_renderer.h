@@ -80,45 +80,11 @@ struct UniformBufferObject {
 };
 
 struct Vertex {
-	glm::vec3 pos;
-	glm::vec3 color;
-	glm::vec3 normal;
-	glm::vec2 texCoord;
-
-	static VkVertexInputBindingDescription get_binding_description()
-	{
-		VkVertexInputBindingDescription bindingDescription{};
-		bindingDescription.binding = 0;
-		bindingDescription.stride = sizeof(Vertex);
-		bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-		return bindingDescription;
-	}
-
-	static std::array<VkVertexInputAttributeDescription, 3> get_attribute_descriptions()
-	{
-		std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
-		attributeDescriptions[0].binding = 0;
-		attributeDescriptions[0].location = 0;
-		attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attributeDescriptions[0].offset = offsetof(Vertex, pos);
-
-		attributeDescriptions[1].binding = 0;
-		attributeDescriptions[1].location = 1;
-		attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-		attributeDescriptions[2].binding = 0;
-		attributeDescriptions[2].location = 2;
-		attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-		attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
-
-		return attributeDescriptions;
-	}
-
-	bool operator==(const Vertex& other) const {
-		return pos == other.pos && color == other.color && texCoord == other.texCoord;
-	}
+    glm::vec3 position;
+    float uv_x;
+    glm::vec3 normal;
+    float uv_y;
+    glm::vec4 color;
 };
 
 class GLTFMetallic_Roughness {
@@ -208,12 +174,6 @@ private:
 	VkCommandPool m_graphicsCommandPool;
 	VkCommandPool m_transferCommandPool;
 	uint32_t m_mipLevels;
-	VkImage m_depthImage;
-	VmaAllocation m_depthImageMemory;
-	VkImageView m_depthImageView;
-	VkImage m_colorImage;
-	VmaAllocation  m_colorImageMemory;
-	VkImageView m_colorImageView;
 	VmaAllocator m_allocator;
 
 	MaterialInstance m_defaultData;
@@ -223,6 +183,9 @@ private:
 	AllocatedImage m_blackImage;
 	AllocatedImage m_greyImage;
 	AllocatedImage m_errorCheckerboardImage;
+
+	AllocatedImage m_drawImage;
+	AllocatedImage m_depthImage;
 
 	VkSampler m_defaultSamplerLinear;
 	VkSampler m_defaultSamplerNearest;
@@ -278,8 +241,6 @@ private:
 
 	void create_descriptor_set_layout();
 
-	void create_graphics_pipeline();
-
 	void create_render_pass();
 
 	void init_default_data();
@@ -307,24 +268,10 @@ private:
 
 	void create_sync_objects();
 	void create_command_buffers();
-	void create_descriptor_pool();
 	void create_descriptor_sets();
-	void load_model();
-	void create_vertex_buffer();
-	void create_index_buffer();
 	uint32_t find_memory_type(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
 	VkSampleCountFlagBits get_max_usable_sample_count();
 	void create_allocator();
 };
-}
-
-namespace std {
-    template<> struct hash<Engine::Vertex> {
-        size_t operator()(Engine::Vertex const& vertex) const {
-            return ((hash<glm::vec3>()(vertex.pos) ^
-                    (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
-                   (hash<glm::vec2>()(vertex.texCoord) << 1);
-        }
-    };
 }

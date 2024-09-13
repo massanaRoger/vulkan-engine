@@ -24,7 +24,7 @@ const std::vector<const char*> c_validationLayers = {
 };
 
 const std::vector<const char*> c_deviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME
+	VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
 enum class MaterialPass : uint8_t {

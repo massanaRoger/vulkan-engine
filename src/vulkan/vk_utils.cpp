@@ -51,6 +51,10 @@ std::vector<const char*> get_required_extensions(SDL_Window* window) {
 
 	std::vector<const char*> extensions(sdlExtensions.data(), sdlExtensions.data() + sdlExtensionCount);
 
+	#ifdef PLATFORM_NEEDS_PORTABILITY
+		extensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+	#endif
+
 	if (c_enableValidationLayers) {
 		extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 	}
@@ -122,7 +126,7 @@ std::optional<std::vector<MeshAsset*>> load_gltf_meshes(Renderer& renderer, std:
 				fastgltf::iterateAccessor<std::uint32_t>(gltf, indexAccessor, 
 					     [&](std::uint32_t idx) {
 					     indices.push_back(idx + initial_vtx);
-					}
+					     }
 				);
 			}
 
@@ -134,10 +138,11 @@ std::optional<std::vector<MeshAsset*>> load_gltf_meshes(Renderer& renderer, std:
 				fastgltf::iterateAccessorWithIndex<glm::vec3>(gltf, posAccessor,
 					[&](glm::vec3 v, size_t index) {
 						  Vertex newvtx;
-						  newvtx.pos = v;
+						  newvtx.position = v;
 						  newvtx.normal = { 1, 0, 0 };
 						  newvtx.color = glm::vec4 { 1.f };
-						  newvtx.texCoord = glm::vec2(0.0f, 0.0f);
+						  newvtx.uv_x = 0;
+						  newvtx.uv_y = 0;
 						  vertices[initial_vtx + index] = newvtx;
 				});
 			}
@@ -158,8 +163,8 @@ std::optional<std::vector<MeshAsset*>> load_gltf_meshes(Renderer& renderer, std:
 
 				fastgltf::iterateAccessorWithIndex<glm::vec2>(gltf, gltf.accessors[(*uv).second],
 						  [&](glm::vec2 v, size_t index) {
-						  vertices[initial_vtx + index].texCoord.x = v.x;
-						  vertices[initial_vtx + index].texCoord.y = v.y;
+						  vertices[initial_vtx + index].uv_x = v.x;
+						  vertices[initial_vtx + index].uv_y = v.y;
 				});
 			}
 
@@ -184,7 +189,6 @@ std::optional<std::vector<MeshAsset*>> load_gltf_meshes(Renderer& renderer, std:
 			}
 		}
 
-		//newMesh.meshBuffers = renderer.upload_mesh(indices, vertices);
 		newMesh->meshBuffers = renderer.upload_mesh(indices, vertices);
 		meshes.emplace_back(newMesh);
 	}
