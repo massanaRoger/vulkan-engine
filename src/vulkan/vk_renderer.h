@@ -203,7 +203,7 @@ private:
 
 	std::vector<MeshAsset*> m_testMeshes;
 
-	void update_scene();
+	void update_scene(const Camera& camera);
 
 	void create_instance();
 

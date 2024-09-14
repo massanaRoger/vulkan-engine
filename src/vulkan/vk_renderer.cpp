@@ -238,7 +238,7 @@ void Renderer::cleanup()
 
 void Renderer::draw_frame(const Camera& camera)
 {
-	update_scene();
+	update_scene(camera);
 
 	vkWaitForFences(device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
 
@@ -259,8 +259,6 @@ void Renderer::draw_frame(const Camera& camera)
 	vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
 	record_command_buffer(m_commandBuffers[m_currentFrame], imageIndex);
 
-	// update_uniform_buffer(m_currentFrame, camera);
-	
 	VkSubmitInfo submitInfo{};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
@@ -1532,19 +1530,16 @@ GPUMeshBuffers Renderer::upload_mesh(std::vector<uint32_t>& indices, std::vector
 	return newSurface;
 }
 
-void Renderer::update_scene()
+void Renderer::update_scene(const Camera& camera)
 {
 	m_mainDrawContext.opaqueSurfaces.clear();
 
 	m_loadedNodes["Suzanne"]->draw(glm::mat4{1.f}, m_mainDrawContext);	
 
-	m_sceneData.view = glm::translate(glm::vec3{ 0,0,-5 });
+	m_sceneData.view = camera.get_view_matrix();
 	// camera projection
-	m_sceneData.proj = glm::perspective(glm::radians(70.f), (float)swapchainExtent.width / (float)swapchainExtent.height, 0.1f, 10000.f);
+	m_sceneData.proj = camera.get_projection_matrix(swapchainExtent.width, swapchainExtent.height);
 
-	// invert the Y direction on projection matrix so that we are more similar
-	// to opengl and gltf axis
-	m_sceneData.proj[1][1] *= -1;
 	m_sceneData.viewproj = m_sceneData.proj * m_sceneData.view;
 
 	//some default lighting parameters

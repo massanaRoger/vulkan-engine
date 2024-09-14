@@ -11,7 +11,7 @@ glm::mat4 Camera::get_view_matrix() const
 
 glm::mat4 Camera::get_projection_matrix(float width, float height) const
 {
-	glm::mat4 proj = glm::perspective(glm::radians(fov), width / height, 0.1f, 10.0f);
+	glm::mat4 proj = glm::perspective(glm::radians(fov), width / height, 0.1f, 10000.f);
 	// Reverse because of vulkan coordinate system
 	proj[1][1] *= -1;
 
