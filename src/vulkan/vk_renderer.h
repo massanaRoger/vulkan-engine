@@ -180,19 +180,15 @@ private:
 	GLTFMetallic_Roughness m_metalRoughMaterial;
 
 	AllocatedImage m_whiteImage;
-	AllocatedImage m_blackImage;
-	AllocatedImage m_greyImage;
-	AllocatedImage m_errorCheckerboardImage;
 
 	AllocatedImage m_drawImage;
 	AllocatedImage m_depthImage;
 
+	AllocatedBuffer m_gpuSceneDataBuffer;
+	AllocatedBuffer m_materialConstants;
+
 	VkSampler m_defaultSamplerLinear;
 	VkSampler m_defaultSamplerNearest;
-
-	std::vector<VkBuffer> m_uniformBuffers;
-	std::vector<VmaAllocation> m_uniformBuffersMemory;
-	std::vector<void*> m_uniformBuffersMapped;
 
 	std::vector<VkCommandBuffer> m_commandBuffers;
 	std::vector<VkSemaphore> m_imageAvailableSemaphores;
@@ -229,6 +225,8 @@ private:
 
 	bool check_device_extension_support(VkPhysicalDevice device);
 
+	void create_scene_data();
+
 	SwapChainSupportDetails query_swap_chain_support(VkPhysicalDevice device);
 	VkSurfaceFormatKHR choose_swap_chain_format(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 	VkPresentModeKHR choose_swap_present_mode(const std::vector<VkPresentModeKHR>& availablePresentModes);
@@ -248,8 +246,6 @@ private:
 	void create_frame_buffers();
 	VkCommandBuffer begin_single_time_commands();
 	void end_single_time_commands(VkCommandBuffer commandBuffer);
-	void create_uniform_buffers();
-	void update_uniform_buffer(uint32_t currentImage, const Camera& camera);
 
 	void create_command_pools();
 	void create_color_resources();

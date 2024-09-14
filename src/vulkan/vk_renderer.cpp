@@ -48,20 +48,14 @@ void Renderer::init_vulkan(SDL_Window* window)
 	create_image_views();
 	create_render_pass();
 	create_descriptor_set_layout();
-	// create_graphics_pipeline();
 	m_metalRoughMaterial.build_pipelines(getInstance());
 	create_command_pools();
 	create_color_resources();
 	create_depth_resources();
 	create_frame_buffers();
 	m_testMeshes = load_gltf_meshes(getInstance(), "../../models/basicmesh.glb").value();
-	// load_gltf_meshes(getInstance(), "../../models/pony_cartoon.glb");
-	// load_model();
-	// create_vertex_buffer();
-	// create_index_buffer();
-	create_uniform_buffers();
-	// create_descriptor_pool();
 	create_descriptor_sets();
+	create_scene_data();
 	create_command_buffers();
 	create_sync_objects();
 	init_default_data();
@@ -104,21 +98,19 @@ void Renderer::init_default_data()
 	materialResources.metalRoughSampler = m_defaultSamplerLinear;
 
 	//set the uniform buffer for the material data
-	AllocatedBuffer materialConstants;
-
-	create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, materialConstants.buffer, materialConstants.allocation);
+	create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_materialConstants.buffer, m_materialConstants.allocation);
 
 	//write the buffer
 	void* mappedData;
-	VK_CHECK(vmaMapMemory(m_allocator, materialConstants.allocation, &mappedData));
+	VK_CHECK(vmaMapMemory(m_allocator, m_materialConstants.allocation, &mappedData));
 	GLTFMetallic_Roughness::MaterialConstants* sceneUniformData = (GLTFMetallic_Roughness::MaterialConstants*)mappedData;
 
 	sceneUniformData->colorFactors = glm::vec4{ 1, 1, 1, 1 };
 	sceneUniformData->metal_rough_factors = glm::vec4{ 1, 0.5, 0, 0 };
 
-	vmaUnmapMemory(m_allocator, materialConstants.allocation);
+	vmaUnmapMemory(m_allocator, m_materialConstants.allocation);
 
-	materialResources.dataBuffer = materialConstants.buffer;
+	materialResources.dataBuffer = m_materialConstants.buffer;
 	materialResources.dataBufferOffset = 0;
 
 	std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes =
@@ -191,21 +183,36 @@ void Renderer::cleanup()
 
 	cleanup_swapchain();
 
-	vkDestroyImageView(device, m_drawImage.imageView, nullptr);
-	vmaDestroyImage(m_allocator, m_drawImage.image, m_drawImage.allocation);
+	vkDestroyImageView(device, m_whiteImage.imageView, nullptr);
+	vmaDestroyImage(m_allocator, m_whiteImage.image, m_whiteImage.allocation);
+
+	vkDestroySampler(device, m_defaultSamplerLinear, nullptr);
+	vkDestroySampler(device, m_defaultSamplerNearest, nullptr);
+
+	m_metalRoughMaterial.clear_resources(device);
 
 	vkDestroyRenderPass(device, renderPass, nullptr);
 
-	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+	/*for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 		vmaUnmapMemory(m_allocator, m_uniformBuffersMemory[i]);
 		vmaDestroyBuffer(m_allocator, m_uniformBuffers[i], m_uniformBuffersMemory[i]);
-	}
+	}*/
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 		m_descriptors[i].destroy_pools(device);
 	}
+	m_globalDescriptorAllocator.destroy_pools(device);
+
+	for (auto& mesh : m_testMeshes) {
+		vmaDestroyBuffer(m_allocator, mesh->meshBuffers.indexBuffer.buffer, mesh->meshBuffers.indexBuffer.allocation);
+		vmaDestroyBuffer(m_allocator, mesh->meshBuffers.vertexBuffer.buffer, mesh->meshBuffers.vertexBuffer.allocation);
+	}
+
+	vmaDestroyBuffer(m_allocator, m_gpuSceneDataBuffer.buffer, m_gpuSceneDataBuffer.allocation);
+	vmaDestroyBuffer(m_allocator, m_materialConstants.buffer, m_materialConstants.allocation);
 
 	vkDestroyDescriptorSetLayout(device, m_gpuSceneDataDescriptorLayout, nullptr);
+	vkDestroyDescriptorSetLayout(device, m_materialDescriptorLayout, nullptr);
 
 	vmaDestroyAllocator(m_allocator);
 
@@ -217,6 +224,7 @@ void Renderer::cleanup()
 
 	vkDestroyCommandPool(device, m_transferCommandPool, nullptr);
 	vkDestroyCommandPool(device, m_graphicsCommandPool, nullptr);
+
 
 	vkDestroyDevice(device, nullptr);
 
@@ -660,6 +668,9 @@ void Renderer::cleanup_swapchain()
 	vkDestroyImageView(device, m_depthImage.imageView, nullptr);
 	vmaDestroyImage(m_allocator, m_depthImage.image, m_depthImage.allocation);
 
+	vkDestroyImageView(device, m_drawImage.imageView, nullptr);
+	vmaDestroyImage(m_allocator, m_drawImage.image, m_drawImage.allocation);
+
 	for (size_t i = 0; i < m_swapchainFramebuffers.size(); i++) {
 		vkDestroyFramebuffer(device, m_swapchainFramebuffers[i], nullptr);
 	}
@@ -872,17 +883,6 @@ void Renderer::create_frame_buffers()
 
 		VK_CHECK(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &m_swapchainFramebuffers[i]));
 	}
-}
-
-void Renderer::update_uniform_buffer(uint32_t currentImage, const Camera& camera)
-{
-	UniformBufferObject ubo{};
-	ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	ubo.model = glm::scale(ubo.model, glm::vec3(0.01f));
-	ubo.view = camera.get_view_matrix();
-	ubo.proj = camera.get_projection_matrix(swapchainExtent.width, swapchainExtent.height);
-
-	memcpy(m_uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }
 
 void Renderer::create_command_pools()
@@ -1143,6 +1143,7 @@ AllocatedImage Renderer::create_image(VkExtent3D size, VkFormat format, VkImageU
 
 	VK_CHECK(vkCreateImageView(device, &imageViewInfo, nullptr, &newImage.imageView));
 
+
 	return newImage;
 }
 
@@ -1168,8 +1169,7 @@ AllocatedImage Renderer::create_image(void* data, VkExtent3D size, VkFormat form
 
 	transition_image_layout(newImage.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1);
 
-	vkDestroyBuffer(device, uploadBufferInfo, nullptr);
-	vmaFreeMemory(m_allocator, uploadBufferMemory);
+	vmaDestroyBuffer(m_allocator, uploadBufferInfo, uploadBufferMemory);
 
 	return newImage;
 }
@@ -1301,22 +1301,6 @@ void Renderer::end_single_time_commands(VkCommandBuffer commandBuffer) {
     vkFreeCommandBuffers(device, m_graphicsCommandPool, 1, &commandBuffer);
 }
 
-void Renderer::create_uniform_buffers()
-{
-	VkDeviceSize bufferSize = sizeof(UniformBufferObject);
-
-	m_uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-	m_uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
-	m_uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
-
-	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-		create_buffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_uniformBuffers[i], m_uniformBuffersMemory[i]);
-
-		vmaMapMemory(m_allocator, m_uniformBuffersMemory[i], &m_uniformBuffersMapped[i]);
-	}
-
-}
-
 void Renderer::create_descriptor_sets()
 {
 	m_descriptors.resize(MAX_FRAMES_IN_FLIGHT);
@@ -1360,6 +1344,10 @@ uint32_t Renderer::find_memory_type(uint32_t typeFilter, VkMemoryPropertyFlags p
 	abort();
 }
 
+void Renderer::create_scene_data()
+{
+	create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_gpuSceneDataBuffer.buffer, m_gpuSceneDataBuffer.allocation);
+}
 void Renderer::create_command_buffers()
 {
 	m_commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
@@ -1418,19 +1406,17 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 	scissor.extent = swapchainExtent;
 	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-	AllocatedBuffer gpuSceneDataBuffer;
-	create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, gpuSceneDataBuffer.buffer, gpuSceneDataBuffer.allocation);
 
 	void* data;
-	vmaMapMemory(m_allocator, gpuSceneDataBuffer.allocation, &data);
+	vmaMapMemory(m_allocator, m_gpuSceneDataBuffer.allocation, &data);
 	memcpy(data, &m_sceneData, static_cast<size_t>(sizeof(GPUSceneData)));
-	vmaUnmapMemory(m_allocator, gpuSceneDataBuffer.allocation);
+	vmaUnmapMemory(m_allocator, m_gpuSceneDataBuffer.allocation);
 
 	//create a descriptor set that binds that buffer and update it
 	VkDescriptorSet globalDescriptor = m_descriptors[m_currentFrame].allocate(device, m_gpuSceneDataDescriptorLayout);
 
 	DescriptorWriter writer;
-	writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	writer.write_buffer(0, m_gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 	writer.update_set(device, globalDescriptor);
 
 	for (const RenderObject& draw : m_mainDrawContext.opaqueSurfaces) {
@@ -1526,8 +1512,7 @@ GPUMeshBuffers Renderer::upload_mesh(std::vector<uint32_t>& indices, std::vector
 
 	copy_buffer(vertexStagingBuffer, newSurface.vertexBuffer.buffer, vertexBufferSize);
 
-	vkDestroyBuffer(device, vertexStagingBuffer, nullptr);
-	vmaFreeMemory(m_allocator, vertexStagingBufferMemory);
+	vmaDestroyBuffer(m_allocator, vertexStagingBuffer, vertexStagingBufferMemory);
 
 	VkBuffer indexStagingBuffer;
 	VmaAllocation indexStagingBufferMemory;
@@ -1542,8 +1527,7 @@ GPUMeshBuffers Renderer::upload_mesh(std::vector<uint32_t>& indices, std::vector
 
 	copy_buffer(indexStagingBuffer, newSurface.indexBuffer.buffer, indexBufferSize);
 
-	vkDestroyBuffer(device, indexStagingBuffer, nullptr);
-	vmaFreeMemory(m_allocator, indexStagingBufferMemory);
+	vmaDestroyBuffer(m_allocator, indexStagingBuffer, indexStagingBufferMemory);
 
 	return newSurface;
 }
@@ -1631,8 +1615,10 @@ void GLTFMetallic_Roughness::build_pipelines(Renderer& renderer)
 	meshLayoutInfo.pPushConstantRanges = &matrixRange;
 	meshLayoutInfo.pushConstantRangeCount = 1;
 
-	VkPipelineLayout newLayout;
-	VK_CHECK(vkCreatePipelineLayout(renderer.device, &meshLayoutInfo, nullptr, &newLayout));
+	VkPipelineLayout newOpaqueLayout;
+	VkPipelineLayout newTransparentLayout;
+	VK_CHECK(vkCreatePipelineLayout(renderer.device, &meshLayoutInfo, nullptr, &newOpaqueLayout));
+	VK_CHECK(vkCreatePipelineLayout(renderer.device, &meshLayoutInfo, nullptr, &newTransparentLayout));
 
 	VkViewport viewport{};
 	viewport.x = 0.0f;
@@ -1652,8 +1638,9 @@ void GLTFMetallic_Roughness::build_pipelines(Renderer& renderer)
 	viewportState.pViewports = &viewport;
 	viewportState.scissorCount = 1;
 	viewportState.pScissors = &scissor;
-	opaquePipeline.layout = newLayout;
-	transparentPipeline.layout = newLayout;
+
+	opaquePipeline.layout = newOpaqueLayout;
+	transparentPipeline.layout = newTransparentLayout;
 
 	VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
 	vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -1741,7 +1728,7 @@ void GLTFMetallic_Roughness::build_pipelines(Renderer& renderer)
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = &dynamicState;
 	pipelineInfo.renderPass = renderer.renderPass;
-	pipelineInfo.layout = newLayout;
+	pipelineInfo.layout = newOpaqueLayout;
 
 	VK_CHECK(vkCreateGraphicsPipelines(renderer.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &opaquePipeline.pipeline));
 
@@ -1764,10 +1751,23 @@ void GLTFMetallic_Roughness::build_pipelines(Renderer& renderer)
 	depthStencil.minDepthBounds = 0.f;
 	depthStencil.maxDepthBounds = 1.f;
 
+	pipelineInfo.layout = newTransparentLayout;
+
 	VK_CHECK(vkCreateGraphicsPipelines(renderer.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &transparentPipeline.pipeline));
 
 	vkDestroyShaderModule(renderer.device, meshFragShader, nullptr);
 	vkDestroyShaderModule(renderer.device, meshVertexShader, nullptr);
+}
+
+void GLTFMetallic_Roughness::clear_resources(VkDevice device)
+{
+	vkDestroyPipeline(device, opaquePipeline.pipeline, nullptr);
+	vkDestroyPipelineLayout(device, opaquePipeline.layout, nullptr);
+
+	vkDestroyPipeline(device, transparentPipeline.pipeline, nullptr);
+	vkDestroyPipelineLayout(device, transparentPipeline.layout, nullptr);
+
+	vkDestroyDescriptorSetLayout(device, materialLayout, nullptr);
 }
 
 MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, MaterialPass pass, const MaterialResources& resources, DescriptorAllocatorGrowable& descriptorAllocator)
