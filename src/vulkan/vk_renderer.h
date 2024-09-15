@@ -127,10 +127,17 @@ struct DrawContext {
 	std::vector<RenderObject> transparentSurfaces;
 };
 
+struct EngineStats {
+    float frameTime;
+    int triangleCount;
+    int drawcallCount;
+    float sceneUpdateTime;
+    float meshDrawTime;
+};
 
 class Renderer {
 public:
-
+	EngineStats stats;
 	bool frameBufferResized = false;
 	VkDevice device;
 	VkExtent2D swapchainExtent;

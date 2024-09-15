@@ -1426,6 +1426,13 @@ void Renderer::create_command_buffers()
 }
 
 void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, ImDrawData* drawData) {
+
+	//reset counters
+	stats.drawcallCount = 0;
+	stats.triangleCount = 0;
+	//begin clock
+	auto start = std::chrono::system_clock::now();
+
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = 0;
@@ -1496,6 +1503,10 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 		vkCmdPushConstants(commandBuffer, draw.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
 
 		vkCmdDrawIndexed(commandBuffer, draw.indexCount, 1, draw.firstIndex,0,0);
+
+		//add counters for triangles and draws
+		stats.drawcallCount++;
+		stats.triangleCount += draw.indexCount / 3;
 	};
 
 	for (const RenderObject& obj : m_mainDrawContext.opaqueSurfaces) {
@@ -1511,6 +1522,11 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 	vkCmdEndRenderPass2(commandBuffer, &subpassEndInfo);
 
 	VK_CHECK(vkEndCommandBuffer(commandBuffer));
+
+	auto end = std::chrono::system_clock::now();
+
+	auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+	stats.meshDrawTime = elapsed.count() / 1000.f;
 
 }
 void Renderer::create_sync_objects()
@@ -1603,6 +1619,8 @@ GPUMeshBuffers Renderer::upload_mesh(std::vector<uint32_t>& indices, std::vector
 
 void Renderer::update_scene(const Camera& camera)
 {
+	auto start = std::chrono::system_clock::now();
+
 	m_mainDrawContext.opaqueSurfaces.clear();
 	m_mainDrawContext.transparentSurfaces.clear();
 
@@ -1618,6 +1636,11 @@ void Renderer::update_scene(const Camera& camera)
 	m_sceneData.ambientColor = glm::vec4(.1f);
 	m_sceneData.sunlightColor = glm::vec4(1.f);
 	m_sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
+
+	auto end = std::chrono::system_clock::now();
+	auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+	stats.sceneUpdateTime = elapsed.count() / 1000.f;
 }
 
 void Renderer::destroy_image(const AllocatedImage& img)

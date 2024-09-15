@@ -41,6 +41,7 @@ void Application::run()
 	float deltaTime = 0.0f;
 	auto lastFrame = std::chrono::high_resolution_clock::now();
 	while(!m_quit) {
+		auto start = std::chrono::system_clock::now();
 		auto currentFrame = std::chrono::high_resolution_clock::now();
 		deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(currentFrame - lastFrame).count();
 		lastFrame = currentFrame;
@@ -66,8 +67,16 @@ void Application::run()
 
 		ImGui::NewFrame();
 
+		ImGui::Begin("Stats");
+
+		ImGui::Text("frametime %f ms", m_renderer.stats.frameTime);
+		ImGui::Text("draw time %f ms", m_renderer.stats.meshDrawTime);
+		ImGui::Text("update time %f ms", m_renderer.stats.sceneUpdateTime);
+		ImGui::Text("triangles %i", m_renderer.stats.triangleCount);
+		ImGui::Text("draws %i", m_renderer.stats.drawcallCount);
+		ImGui::End();
+
 		if (m_showImguiWindow) {
-			ImGui::ShowDemoWindow();
 		}
 
 		//make imgui calculate internal draw structures
@@ -75,6 +84,12 @@ void Application::run()
 		ImDrawData* drawData = ImGui::GetDrawData();
 
 		m_renderer.draw_frame(m_camera, drawData);
+
+		auto end = std::chrono::system_clock::now();
+
+		//convert to microseconds (integer), and then come back to miliseconds
+		auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+		m_renderer.stats.frameTime = elapsed.count() / 1000.f;
 	}
 }
 
