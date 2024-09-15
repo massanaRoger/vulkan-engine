@@ -2,6 +2,9 @@
 #include "fastgltf/parser.hpp"
 #include "fastgltf/tools.hpp"
 #include "fastgltf/util.hpp"
+#include "vulkan/vk_types.h"
+#include <optional>
+#include "stb_image.h"
 #include <fastgltf/glm_element_traits.hpp>
 #include "fmt/core.h"
 #include "vulkan/vk_renderer.h"
@@ -115,7 +118,17 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 	std::vector<std::shared_ptr<GLTFMaterial>> materials;
 
 	for (fastgltf::Image& image : gltf.images) {
-		images.push_back(renderer.errorCheckerboardImage);
+		std::optional<AllocatedImage> img = load_image(gltf, image);
+
+		if (img.has_value()) {
+			images.push_back(*img);
+			file.images[image.name.c_str()] = *img;
+		} else {
+			// we failed to load, so lets give the slot a default white texture to not
+			// completely break loading
+			images.push_back(renderer.errorCheckerboardImage);
+			std::cout << "gltf failed to load texture " << image.name << std::endl;
+		}
 	}
 
 	file.materialDataBuffer = renderer.create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants) * gltf.materials.size(),
@@ -319,6 +332,86 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 
 }
 
+std::optional<AllocatedImage> load_image(fastgltf::Asset& asset, fastgltf::Image& image)
+{
+
+	AllocatedImage newImage {};
+	Renderer& renderer = Renderer::getInstance();
+
+	int width, height, nrChannels;
+
+	std::visit(
+		fastgltf::visitor {
+			[](auto& arg) {},
+			[&](fastgltf::sources::URI& filePath) {
+				assert(filePath.fileByteOffset == 0); // We don't support offsets with stbi.
+				assert(filePath.uri.isLocalPath()); // We're only capable of loading
+				// local files.
+
+				const std::string path(filePath.uri.path().begin(), filePath.uri.path().end());
+				unsigned char* data = stbi_load(path.c_str(), &width, &height, &nrChannels, 4);
+				if (data) {
+					VkExtent3D imagesize;
+					imagesize.width = width;
+					imagesize.height = height;
+					imagesize.depth = 1;
+
+					newImage = renderer.create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+
+					stbi_image_free(data);
+				}
+			},
+			[&](fastgltf::sources::Vector& vector) {
+				unsigned char* data = stbi_load_from_memory(vector.bytes.data(), static_cast<int>(vector.bytes.size()),
+						&width, &height, &nrChannels, 4);
+				if (data) {
+					VkExtent3D imagesize;
+					imagesize.width = width;
+					imagesize.height = height;
+					imagesize.depth = 1;
+
+					newImage = renderer.create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+
+					stbi_image_free(data);
+				}
+			},
+			[&](fastgltf::sources::BufferView& view) {
+				auto& bufferView = asset.bufferViews[view.bufferViewIndex];
+				auto& buffer = asset.buffers[bufferView.bufferIndex];
+
+				std::visit(fastgltf::visitor { // We only care about VectorWithMime here, because we
+					// specify LoadExternalBuffers, meaning all buffers
+					// are already loaded into a vector.
+					[](auto& arg) {},
+					[&](fastgltf::sources::Vector& vector) {
+						unsigned char* data = stbi_load_from_memory(vector.bytes.data() + bufferView.byteOffset,
+						  static_cast<int>(bufferView.byteLength),
+						  &width, &height, &nrChannels, 4);
+						if (data) {
+							VkExtent3D imagesize;
+							imagesize.width = width;
+							imagesize.height = height;
+							imagesize.depth = 1;
+
+							newImage = renderer.create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+
+							stbi_image_free(data);
+						}
+					} 
+			},
+			buffer.data);
+			},
+		},
+		image.data);
+
+	// if any of the attempts to load the data failed, we havent written the image
+	// so handle is null
+	if (newImage.image == VK_NULL_HANDLE) {
+		return {};
+	} else {
+		return newImage;
+	}
+}
 
 void LoadedGLTF::draw(const glm::mat4& topMatrix, DrawContext& ctx)
 {
@@ -329,6 +422,31 @@ void LoadedGLTF::draw(const glm::mat4& topMatrix, DrawContext& ctx)
 
 void LoadedGLTF::clearAll()
 {
+	Renderer& renderer = Renderer::getInstance();
+	VkDevice dv = renderer.device;
+
+	descriptorPool.destroy_pools(dv);
+
+	renderer.destroy_buffer(materialDataBuffer);
+
+	for (auto& [k, v] : meshes) {
+
+		renderer.destroy_buffer(v->meshBuffers.indexBuffer);
+		renderer.destroy_buffer(v->meshBuffers.vertexBuffer);
+	}
+
+	for (auto& [k, v] : images) {
+
+		if (v.image == renderer.errorCheckerboardImage.image) {
+			//dont destroy the default images
+			continue;
+		}
+		renderer.destroy_image(v);
+	}
+
+	for (auto& sampler : samplers) {
+		vkDestroySampler(dv, sampler, nullptr);
+	}
 }
 
 }

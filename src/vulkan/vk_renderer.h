@@ -123,6 +123,7 @@ struct MeshNode : public Node {
 
 struct DrawContext {
 	std::vector<RenderObject> opaqueSurfaces;
+	std::vector<RenderObject> transparentSurfaces;
 };
 
 
@@ -146,9 +147,16 @@ public:
 	void init_vulkan(SDL_Window* window);
 	void draw_frame(const Camera& camera);
 	GPUMeshBuffers upload_mesh(std::vector<uint32_t>& indices, std::vector<Vertex>& vertices);
+
 	[[nodiscard]] VkDescriptorSetLayout get_gpu_scene_data_descriptor_layout() const;
 	[[nodiscard]] VkDescriptorSetLayout get_material_descriptor_layout() const;
+
 	AllocatedBuffer create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkSharingMode sharingMode);
+	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped);
+
+	void destroy_image(const AllocatedImage& img);
+	void destroy_buffer(const AllocatedBuffer& buffer);
+
 	void cleanup();
 
 	Renderer(const Renderer&) = delete;
@@ -201,10 +209,9 @@ private:
 	GPUSceneData m_sceneData;
 
 	DrawContext m_mainDrawContext;
-	std::unordered_map<std::string, Node*> m_loadedNodes;
 
 	//std::vector<MeshAsset*> m_testMeshes;
-	std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
+	std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> m_loadedScenes;
 
 	void update_scene(const Camera& camera);
 
@@ -257,7 +264,6 @@ private:
 	void generate_mipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
 	void create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, 
 		   VkImageUsageFlags usage, VmaMemoryUsage memoryUsage, VkImage& image, VmaAllocation& imageAllocation);
-	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped);
 	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped);
 	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	void transition_image_layout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);

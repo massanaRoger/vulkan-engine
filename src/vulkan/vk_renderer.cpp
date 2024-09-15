@@ -136,7 +136,7 @@ void Renderer::init_default_data()
 
 	assert(structureFile.has_value());
 
-	loadedScenes["structure"] = *structureFile;
+	m_loadedScenes["structure"] = *structureFile;
 
 }
 
@@ -663,6 +663,8 @@ void Renderer::create_swapchain()
 
 void Renderer::cleanup_swapchain()
 {
+	m_loadedScenes.clear();
+
 	vkDestroyImageView(device, m_depthImage.imageView, nullptr);
 	vmaDestroyImage(m_allocator, m_depthImage.image, m_depthImage.allocation);
 
@@ -690,8 +692,6 @@ void Renderer::recreate_swapchain()
 	}
 
 	vkDeviceWaitIdle(device);
-
-	loadedScenes.clear();
 
 	cleanup_swapchain();
 
@@ -1420,8 +1420,7 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 	writer.write_buffer(0, m_gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 	writer.update_set(device, globalDescriptor);
 
-	for (const RenderObject& draw : m_mainDrawContext.opaqueSurfaces) {
-
+	auto draw = [&](const RenderObject& draw) {
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->pipeline);
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr );
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 1, 1, &draw.material->materialSet, 0, nullptr);
@@ -1434,6 +1433,14 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 		vkCmdPushConstants(commandBuffer, draw.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
 
 		vkCmdDrawIndexed(commandBuffer, draw.indexCount, 1, draw.firstIndex,0,0);
+	};
+
+	for (const RenderObject& obj : m_mainDrawContext.opaqueSurfaces) {
+		draw(obj);
+	}
+
+	for (const RenderObject& obj : m_mainDrawContext.transparentSurfaces) {
+		draw(obj);
 	}
 
 	vkCmdEndRenderPass2(commandBuffer, &subpassEndInfo);
@@ -1532,8 +1539,9 @@ GPUMeshBuffers Renderer::upload_mesh(std::vector<uint32_t>& indices, std::vector
 void Renderer::update_scene(const Camera& camera)
 {
 	m_mainDrawContext.opaqueSurfaces.clear();
+	m_mainDrawContext.transparentSurfaces.clear();
 
-	loadedScenes["structure"]->draw(glm::mat4{ 1.f }, m_mainDrawContext);
+	m_loadedScenes["structure"]->draw(glm::mat4{ 1.f }, m_mainDrawContext);
 
 	m_sceneData.view = camera.get_view_matrix();
 	// camera projection
@@ -1547,6 +1555,16 @@ void Renderer::update_scene(const Camera& camera)
 	m_sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
 }
 
+void Renderer::destroy_image(const AllocatedImage& img)
+{
+	vkDestroyImageView(device, img.imageView, nullptr);
+	vmaDestroyImage(m_allocator, img.image, img.allocation);
+}
+
+void Renderer::destroy_buffer(const AllocatedBuffer& buffer)
+{
+    vmaDestroyBuffer(m_allocator, buffer.buffer, buffer.allocation);
+}
 
 [[nodiscard]] VkDescriptorSetLayout Renderer::get_gpu_scene_data_descriptor_layout() const
 {

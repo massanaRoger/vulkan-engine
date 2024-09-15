@@ -1,5 +1,6 @@
 #pragma once
 
+#include "fastgltf/types.hpp"
 #include "vulkan/vk_descriptors.h"
 #include "vulkan/vk_renderer.h"
 #include "vulkan/vk_types.h"
@@ -37,5 +38,6 @@ private:
 };
 
 std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath);
+std::optional<AllocatedImage> load_image(fastgltf::Asset& asset, fastgltf::Image& image);
 
 }
