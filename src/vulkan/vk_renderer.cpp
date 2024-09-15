@@ -5,7 +5,9 @@
 #include "core/camera.h"
 #include "vk_types.h"
 #include "vk_utils.h"
+#include "vulkan/vk_asset_loader.h"
 #include "vulkan/vk_descriptors.h"
+#include <array>
 #include <cmath>
 #include <unordered_map>
 #include <vulkan/vulkan_core.h>
@@ -48,12 +50,11 @@ void Renderer::init_vulkan(SDL_Window* window)
 	create_image_views();
 	create_render_pass();
 	create_descriptor_set_layout();
-	m_metalRoughMaterial.build_pipelines(getInstance());
+	metalRoughMaterial.build_pipelines(getInstance());
 	create_command_pools();
 	create_color_resources();
 	create_depth_resources();
 	create_frame_buffers();
-	m_testMeshes = load_gltf_meshes(getInstance(), "../../models/basicmesh.glb").value();
 	create_descriptor_sets();
 	create_scene_data();
 	create_command_buffers();
@@ -65,19 +66,25 @@ void Renderer::init_default_data()
 {
 	//3 default textures, white, grey, black. 1 pixel each
 	uint32_t white = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
-	m_whiteImage = create_image((void*)&white, VkExtent3D{ 1, 1, 1 }, VK_FORMAT_R8G8B8A8_UNORM,
-			    VK_IMAGE_USAGE_SAMPLED_BIT, false);
 
+	std::array<uint32_t, 16 *16 > pixels; //for 16x16 checkerboard texture
+	
 	uint32_t black = glm::packUnorm4x8(glm::vec4(0, 0, 0, 0));
 
 	//checkerboard image
 	uint32_t magenta = glm::packUnorm4x8(glm::vec4(1, 0, 1, 1));
-	std::array<uint32_t, 16 *16 > pixels; //for 16x16 checkerboard texture
+
 	for (int x = 0; x < 16; x++) {
 		for (int y = 0; y < 16; y++) {
 			pixels[y*16 + x] = ((x % 2) ^ (y % 2)) ? magenta : black;
 		}
 	}
+
+	whiteImage = create_image((void*)&white, VkExtent3D{ 1, 1, 1 }, VK_FORMAT_R8G8B8A8_UNORM,
+			    VK_IMAGE_USAGE_SAMPLED_BIT, false);
+
+	errorCheckerboardImage = create_image(pixels.data(), VkExtent3D{ 16, 16, 1 }, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+
 
 	VkSamplerCreateInfo sampl = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
 
@@ -88,17 +95,17 @@ void Renderer::init_default_data()
 
 	sampl.magFilter = VK_FILTER_LINEAR;
 	sampl.minFilter = VK_FILTER_LINEAR;
-	vkCreateSampler(device, &sampl, nullptr, &m_defaultSamplerLinear);
+	vkCreateSampler(device, &sampl, nullptr, &defaultSamplerLinear);
 
 	GLTFMetallic_Roughness::MaterialResources materialResources;
 	//default the material textures
-	materialResources.colorImage = m_whiteImage;
-	materialResources.colorSampler = m_defaultSamplerLinear;
-	materialResources.metalRoughImage = m_whiteImage;
-	materialResources.metalRoughSampler = m_defaultSamplerLinear;
+	materialResources.colorImage = whiteImage;
+	materialResources.colorSampler = defaultSamplerLinear;
+	materialResources.metalRoughImage = whiteImage;
+	materialResources.metalRoughSampler = defaultSamplerLinear;
 
 	//set the uniform buffer for the material data
-	create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_materialConstants.buffer, m_materialConstants.allocation);
+	m_materialConstants = create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE);
 
 	//write the buffer
 	void* mappedData;
@@ -121,21 +128,16 @@ void Renderer::init_default_data()
 
 	m_globalDescriptorAllocator.init(device, 10, sizes);
 
-	m_defaultData = m_metalRoughMaterial.write_material(device, MaterialPass::MainColor, materialResources, m_globalDescriptorAllocator);
+	m_defaultData = metalRoughMaterial.write_material(device, MaterialPass::MainColor, materialResources, m_globalDescriptorAllocator);
 
-	for (auto& m : m_testMeshes) {
-		auto newNode = new MeshNode();
-		newNode->mesh = m;
 
-		newNode->localTransform = glm::mat4{ 1.f };
-		newNode->worldTransform = glm::mat4{ 1.f };
+	std::string structurePath = { "..\\..\\models\\structure.glb" };
+	auto structureFile = loadGltf(structurePath);
 
-		for (auto& s : newNode->mesh->surfaces) {
-			s.material = new GLTFMaterial(m_defaultData);
-		}
+	assert(structureFile.has_value());
 
-		m_loadedNodes[m->name] = std::move(newNode);
-	}
+	loadedScenes["structure"] = *structureFile;
+
 }
 
 void Renderer::create_instance()
@@ -183,13 +185,16 @@ void Renderer::cleanup()
 
 	cleanup_swapchain();
 
-	vkDestroyImageView(device, m_whiteImage.imageView, nullptr);
-	vmaDestroyImage(m_allocator, m_whiteImage.image, m_whiteImage.allocation);
+	vkDestroyImageView(device, whiteImage.imageView, nullptr);
+	vmaDestroyImage(m_allocator, whiteImage.image, whiteImage.allocation);
 
-	vkDestroySampler(device, m_defaultSamplerLinear, nullptr);
+	vkDestroyImageView(device, errorCheckerboardImage.imageView, nullptr);
+	vmaDestroyImage(m_allocator, errorCheckerboardImage.image, errorCheckerboardImage.allocation);
+
+	vkDestroySampler(device, defaultSamplerLinear, nullptr);
 	vkDestroySampler(device, m_defaultSamplerNearest, nullptr);
 
-	m_metalRoughMaterial.clear_resources(device);
+	metalRoughMaterial.clear_resources(device);
 
 	vkDestroyRenderPass(device, renderPass, nullptr);
 
@@ -202,11 +207,6 @@ void Renderer::cleanup()
 		m_descriptors[i].destroy_pools(device);
 	}
 	m_globalDescriptorAllocator.destroy_pools(device);
-
-	for (auto& mesh : m_testMeshes) {
-		vmaDestroyBuffer(m_allocator, mesh->meshBuffers.indexBuffer.buffer, mesh->meshBuffers.indexBuffer.allocation);
-		vmaDestroyBuffer(m_allocator, mesh->meshBuffers.vertexBuffer.buffer, mesh->meshBuffers.vertexBuffer.allocation);
-	}
 
 	vmaDestroyBuffer(m_allocator, m_gpuSceneDataBuffer.buffer, m_gpuSceneDataBuffer.allocation);
 	vmaDestroyBuffer(m_allocator, m_materialConstants.buffer, m_materialConstants.allocation);
@@ -691,6 +691,8 @@ void Renderer::recreate_swapchain()
 
 	vkDeviceWaitIdle(device);
 
+	loadedScenes.clear();
+
 	cleanup_swapchain();
 
 	create_swapchain();
@@ -1149,25 +1151,22 @@ AllocatedImage Renderer::create_image(void* data, VkExtent3D size, VkFormat form
 {
 	size_t data_size = size.depth * size.width * size.height * 4;
 
-	VkBuffer uploadBufferInfo;
-	VmaAllocation uploadBufferMemory;
-
-	create_buffer(data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, uploadBufferInfo, uploadBufferMemory);
+	AllocatedBuffer uploadBuffer = create_buffer(data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE);
 
 	void* dataRegion;
-	vmaMapMemory(m_allocator, uploadBufferMemory, &dataRegion);
+	vmaMapMemory(m_allocator, uploadBuffer.allocation, &dataRegion);
 	memcpy(dataRegion, data, data_size);
-	vmaUnmapMemory(m_allocator, uploadBufferMemory);
+	vmaUnmapMemory(m_allocator, uploadBuffer.allocation);
 
 	AllocatedImage newImage = create_image(size, format, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, mipmapped);
 
 	transition_image_layout(newImage.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1);
 
-	copy_buffer_to_image(uploadBufferInfo, newImage.image, size.width, size.height);
+	copy_buffer_to_image(uploadBuffer.buffer, newImage.image, size.width, size.height);
 
 	transition_image_layout(newImage.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1);
 
-	vmaDestroyBuffer(m_allocator, uploadBufferInfo, uploadBufferMemory);
+	vmaDestroyBuffer(m_allocator, uploadBuffer.buffer, uploadBuffer.allocation);
 
 	return newImage;
 }
@@ -1247,7 +1246,7 @@ void Renderer::copy_buffer_to_image(VkBuffer buffer, VkImage image, uint32_t wid
 	end_single_time_commands(commandBuffer);
 }
 
-void Renderer::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkSharingMode sharingMode, VkBuffer &buffer, VmaAllocation &bufferMemory)
+AllocatedBuffer Renderer::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkSharingMode sharingMode)
 {
 	VkBufferCreateInfo bufferInfo{};
 	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1260,10 +1259,14 @@ void Renderer::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMem
 		bufferInfo.queueFamilyIndexCount = 2;
 	}
 
-	VmaAllocationCreateInfo	allocInfo{};
-	allocInfo.usage = memoryUsage;
+	VmaAllocationCreateInfo vmaallocInfo = {};
+	vmaallocInfo.usage = memoryUsage;
+	vmaallocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-	vmaCreateBuffer(m_allocator, &bufferInfo, &allocInfo, &buffer, &bufferMemory, nullptr);
+	AllocatedBuffer newBuffer;
+	vmaCreateBuffer(m_allocator, &bufferInfo, &vmaallocInfo, &newBuffer.buffer, &newBuffer.allocation, &newBuffer.info);
+
+	return newBuffer;
 }
 
 VkCommandBuffer Renderer::begin_single_time_commands() {
@@ -1344,7 +1347,7 @@ uint32_t Renderer::find_memory_type(uint32_t typeFilter, VkMemoryPropertyFlags p
 
 void Renderer::create_scene_data()
 {
-	create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_gpuSceneDataBuffer.buffer, m_gpuSceneDataBuffer.allocation);
+	m_gpuSceneDataBuffer = create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE);
 }
 void Renderer::create_command_buffers()
 {
@@ -1494,38 +1497,34 @@ GPUMeshBuffers Renderer::upload_mesh(std::vector<uint32_t>& indices, std::vector
 
 	GPUMeshBuffers newSurface;
 
-	VkBuffer vertexStagingBuffer;
-	VmaAllocation vertexStagingBufferMemory;
-	create_buffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, vertexStagingBuffer, vertexStagingBufferMemory);
+	AllocatedBuffer vertexStagingBuffer = create_buffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE);
 
 	void* vertexData;
-	vmaMapMemory(m_allocator, vertexStagingBufferMemory, &vertexData);
+	vmaMapMemory(m_allocator, vertexStagingBuffer.allocation, &vertexData);
 	memcpy(vertexData, vertices.data(), static_cast<size_t>(vertexBufferSize));
-	vmaUnmapMemory(m_allocator, vertexStagingBufferMemory);
+	vmaUnmapMemory(m_allocator, vertexStagingBuffer.allocation);
 
-	create_buffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SHARING_MODE_CONCURRENT, newSurface.vertexBuffer.buffer, newSurface.vertexBuffer.allocation);
+	newSurface.vertexBuffer = create_buffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SHARING_MODE_CONCURRENT);
 
 	VkBufferDeviceAddressInfo deviceAddressInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = newSurface.vertexBuffer.buffer };
 	newSurface.vertexBufferAddress = vkGetBufferDeviceAddress(device, &deviceAddressInfo);
 
-	copy_buffer(vertexStagingBuffer, newSurface.vertexBuffer.buffer, vertexBufferSize);
+	copy_buffer(vertexStagingBuffer.buffer, newSurface.vertexBuffer.buffer, vertexBufferSize);
 
-	vmaDestroyBuffer(m_allocator, vertexStagingBuffer, vertexStagingBufferMemory);
+	vmaDestroyBuffer(m_allocator, vertexStagingBuffer.buffer, vertexStagingBuffer.allocation);
 
-	VkBuffer indexStagingBuffer;
-	VmaAllocation indexStagingBufferMemory;
-	create_buffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,  VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, indexStagingBuffer, indexStagingBufferMemory);
+	AllocatedBuffer indexStagingBuffer = create_buffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,  VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE);
 
 	void* indexData;
-	vmaMapMemory(m_allocator, indexStagingBufferMemory, &indexData);
+	vmaMapMemory(m_allocator, indexStagingBuffer.allocation, &indexData);
 	memcpy(indexData, indices.data(), static_cast<size_t>(indexBufferSize));
-	vmaUnmapMemory(m_allocator, indexStagingBufferMemory);
+	vmaUnmapMemory(m_allocator, indexStagingBuffer.allocation);
 
-	create_buffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SHARING_MODE_EXCLUSIVE, newSurface.indexBuffer.buffer, newSurface.indexBuffer.allocation);
+	newSurface.indexBuffer = create_buffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SHARING_MODE_EXCLUSIVE);
 
-	copy_buffer(indexStagingBuffer, newSurface.indexBuffer.buffer, indexBufferSize);
+	copy_buffer(indexStagingBuffer.buffer, newSurface.indexBuffer.buffer, indexBufferSize);
 
-	vmaDestroyBuffer(m_allocator, indexStagingBuffer, indexStagingBufferMemory);
+	vmaDestroyBuffer(m_allocator, indexStagingBuffer.buffer, indexStagingBuffer.allocation);
 
 	return newSurface;
 }
@@ -1534,7 +1533,7 @@ void Renderer::update_scene(const Camera& camera)
 {
 	m_mainDrawContext.opaqueSurfaces.clear();
 
-	m_loadedNodes["Suzanne"]->draw(glm::mat4{1.f}, m_mainDrawContext);	
+	loadedScenes["structure"]->draw(glm::mat4{ 1.f }, m_mainDrawContext);
 
 	m_sceneData.view = camera.get_view_matrix();
 	// camera projection

@@ -2,11 +2,11 @@
 
 #include "SDL_video.h"
 #include "core/camera.h"
+#include "vulkan/vk_asset_loader.h"
 #include "vulkan/vk_descriptors.h"
 #include "vulkan/vk_types.h"
-#include <array>
-#include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -14,11 +14,11 @@
 #include <vulkan/vulkan_core.h>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
-#include <functional>
 
 namespace Engine {
 
 class Renderer;
+struct LoadedGLTF;
 
 const int MAX_FRAMES_IN_FLIGHT=2;
 
@@ -28,13 +28,9 @@ struct GLTFMaterial {
 struct GeoSurface {
 	uint32_t startIndex;
 	uint32_t count;
-	GLTFMaterial* material;
+	std::shared_ptr<GLTFMaterial> material;
 };
 
-struct AllocatedBuffer {
-    VkBuffer buffer;
-    VmaAllocation allocation;
-};
 
 struct GPUMeshBuffers {
     AllocatedBuffer indexBuffer;
@@ -120,7 +116,7 @@ public:
 
 struct MeshNode : public Node {
 
-	MeshAsset* mesh;
+	std::shared_ptr<MeshAsset> mesh;
 
 	virtual void draw(const glm::mat4& topMatrix, DrawContext& ctx) override;
 };
@@ -132,6 +128,19 @@ struct DrawContext {
 
 class Renderer {
 public:
+
+	bool frameBufferResized = false;
+	VkDevice device;
+	VkExtent2D swapchainExtent;
+	VkRenderPass renderPass;
+	VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+	AllocatedImage errorCheckerboardImage;
+
+	VkSampler defaultSamplerLinear;
+	AllocatedImage whiteImage;
+
+	GLTFMetallic_Roughness metalRoughMaterial;
+
 	static Renderer& getInstance();
 
 	void init_vulkan(SDL_Window* window);
@@ -139,17 +148,14 @@ public:
 	GPUMeshBuffers upload_mesh(std::vector<uint32_t>& indices, std::vector<Vertex>& vertices);
 	[[nodiscard]] VkDescriptorSetLayout get_gpu_scene_data_descriptor_layout() const;
 	[[nodiscard]] VkDescriptorSetLayout get_material_descriptor_layout() const;
+	AllocatedBuffer create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkSharingMode sharingMode);
 	void cleanup();
 
 	Renderer(const Renderer&) = delete;
 	Renderer& operator=(const Renderer&) = delete;
 
-	bool frameBufferResized = false;
-	VkDevice device;
-	VkExtent2D swapchainExtent;
-	VkRenderPass renderPass;
-	VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 private:
+
 	Renderer() = default;
 
 	SDL_Window* m_window;
@@ -177,9 +183,6 @@ private:
 	VmaAllocator m_allocator;
 
 	MaterialInstance m_defaultData;
-	GLTFMetallic_Roughness m_metalRoughMaterial;
-
-	AllocatedImage m_whiteImage;
 
 	AllocatedImage m_drawImage;
 	AllocatedImage m_depthImage;
@@ -187,7 +190,6 @@ private:
 	AllocatedBuffer m_gpuSceneDataBuffer;
 	AllocatedBuffer m_materialConstants;
 
-	VkSampler m_defaultSamplerLinear;
 	VkSampler m_defaultSamplerNearest;
 
 	std::vector<VkCommandBuffer> m_commandBuffers;
@@ -201,7 +203,8 @@ private:
 	DrawContext m_mainDrawContext;
 	std::unordered_map<std::string, Node*> m_loadedNodes;
 
-	std::vector<MeshAsset*> m_testMeshes;
+	//std::vector<MeshAsset*> m_testMeshes;
+	std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
 
 	void update_scene(const Camera& camera);
 
@@ -259,7 +262,6 @@ private:
 	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	void transition_image_layout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
 	void copy_buffer_to_image(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
-	void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkSharingMode sharingMode, VkBuffer &buffer, VmaAllocation &bufferMemory);
 	void copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
 	void create_sync_objects();

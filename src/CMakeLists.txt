@@ -11,6 +11,8 @@ add_executable (engine
   vulkan/vk_utils.cpp
   vulkan/vk_descriptors.h
   vulkan/vk_descriptors.cpp
+  vulkan/vk_asset_loader.h
+  vulkan/vk_asset_loader.cpp
   main.cpp
 )
 

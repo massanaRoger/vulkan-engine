@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
@@ -63,6 +64,12 @@ struct AllocatedImage {
     VkFormat imageFormat;
 };
 
+struct AllocatedBuffer {
+    VkBuffer buffer;
+    VmaAllocation allocation;
+    VmaAllocationInfo info;
+};
+
 struct GPUDrawPushConstants {
     glm::mat4 worldMatrix;
     VkDeviceAddress vertexBuffer;
@@ -75,8 +82,8 @@ class IRenderable {
 };
 
 struct Node : public IRenderable {
-	Node* parent;
-	std::vector<Node*> children;
+	std::weak_ptr<Node> parent;
+	std::vector<std::shared_ptr<Node>> children;
 
 	glm::mat4 localTransform;
 	glm::mat4 worldTransform;
