@@ -1,8 +1,13 @@
 #include "application.h"
 #include "SDL_events.h"
 #include "SDL_mouse.h"
+#include "SDL_scancode.h"
 #include "SDL_video.h"
 #include "core/camera.h"
+
+#include "imgui.h"
+#include "imgui_impl_vulkan.h"
+#include "imgui_impl_sdl2.h"
 
 #include <chrono>
 #include <SDL.h>
@@ -16,7 +21,7 @@ void Application::init()
 {
 	SDL_Init(SDL_INIT_VIDEO);
 	SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
-	SDL_SetRelativeMouseMode(SDL_TRUE);
+	SDL_SetRelativeMouseMode(SDL_FALSE);
 
 	m_window = SDL_CreateWindow(
 		"Vulkan Engine",
@@ -49,9 +54,27 @@ void Application::run()
 			if (e.type == SDL_MOUSEWHEEL) {
 				handle_mouse_wheel_event(e);
 			}
+			if (e.type == SDL_KEYDOWN) {
+				handle_keydown_event(e);
+			}
+			ImGui_ImplSDL2_ProcessEvent(&e);
 		}
 		process_input(deltaTime);
-		m_renderer.draw_frame(m_camera);
+
+		ImGui_ImplVulkan_NewFrame();
+		ImGui_ImplSDL2_NewFrame();
+
+		ImGui::NewFrame();
+
+		if (m_showImguiWindow) {
+			ImGui::ShowDemoWindow();
+		}
+
+		//make imgui calculate internal draw structures
+		ImGui::Render();
+		ImDrawData* drawData = ImGui::GetDrawData();
+
+		m_renderer.draw_frame(m_camera, drawData);
 	}
 }
 
@@ -63,6 +86,14 @@ void Application::cleanup()
 void Application::process_input(float deltaTime)
 {
 	const Uint8* keystate = SDL_GetKeyboardState(NULL);
+
+	if (keystate[SDL_SCANCODE_ESCAPE]) {
+		m_quit = true;
+	}
+
+	if (m_showImguiWindow) {
+		return;
+	}
 
 	if (keystate[SDL_SCANCODE_W]) {
 		m_camera.handle_keyboard_movement(Directions::Top, deltaTime);
@@ -76,13 +107,13 @@ void Application::process_input(float deltaTime)
 	if (keystate[SDL_SCANCODE_D]) {
 		m_camera.handle_keyboard_movement(Directions::Right, deltaTime);
 	}
-	if (keystate[SDL_SCANCODE_ESCAPE]) {
-		m_quit = true;
-	}
 }
 
 void Application::handle_mouse_event(const SDL_Event& event)
 {
+	if (m_showImguiWindow) {
+		return;
+	}
 	float xoffset = event.motion.xrel;
 	float yoffset = -event.motion.yrel;
 
@@ -91,7 +122,23 @@ void Application::handle_mouse_event(const SDL_Event& event)
 
 void Application::handle_mouse_wheel_event(const SDL_Event& event)
 {
+	if (m_showImguiWindow) {
+		return;
+	}
 	m_camera.handle_scroll(event.wheel.preciseY);
+}
+
+void Application::handle_keydown_event(const SDL_Event& event)
+{
+	if (event.key.keysym.sym == SDLK_F1) {
+		m_showImguiWindow = !m_showImguiWindow;
+		if (m_showImguiWindow) {
+			SDL_SetRelativeMouseMode(SDL_FALSE);
+		} else {
+			SDL_SetRelativeMouseMode(SDL_TRUE);
+		}
+	}
+
 }
 
 int Application::frame_buffer_callback(void* data, SDL_Event* event)

@@ -2,6 +2,7 @@
 
 #include "SDL_video.h"
 #include "core/camera.h"
+#include "imgui.h"
 #include "vulkan/vk_asset_loader.h"
 #include "vulkan/vk_descriptors.h"
 #include "vulkan/vk_types.h"
@@ -145,7 +146,7 @@ public:
 	static Renderer& getInstance();
 
 	void init_vulkan(SDL_Window* window);
-	void draw_frame(const Camera& camera);
+	void draw_frame(const Camera& camera, ImDrawData* drawData);
 	GPUMeshBuffers upload_mesh(std::vector<uint32_t>& indices, std::vector<Vertex>& vertices);
 
 	[[nodiscard]] VkDescriptorSetLayout get_gpu_scene_data_descriptor_layout() const;
@@ -174,19 +175,26 @@ private:
 	VkQueue m_presentQueue;
 	VkQueue m_transferQueue;
 	QueueFamilyIndices m_queueFamilies;
+
 	VkSurfaceKHR m_surface;
 	VkSwapchainKHR m_swapchain;
 	std::vector<VkImage> m_swapchainImages;
 	VkFormat m_swapchainImageFormat;
 	std::vector<VkImageView> m_swapchainImageViews;
+
 	VkDescriptorSetLayout m_gpuSceneDataDescriptorLayout;
 	VkDescriptorSetLayout m_materialDescriptorLayout;
+
 	std::vector<DescriptorAllocatorGrowable> m_descriptors;
 	DescriptorAllocatorGrowable m_globalDescriptorAllocator;
 	DescriptorWriter m_descriptorWriter;
 	std::vector<VkFramebuffer> m_swapchainFramebuffers;
+
+	VkDescriptorPool m_imguiPool;
+
 	VkCommandPool m_graphicsCommandPool;
 	VkCommandPool m_transferCommandPool;
+
 	uint32_t m_mipLevels;
 	VmaAllocator m_allocator;
 
@@ -216,6 +224,10 @@ private:
 	void update_scene(const Camera& camera);
 
 	void create_instance();
+
+	void init_imgui();
+	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
+	void cleanup_imgui();
 
 	bool check_validation_layer_support();
 	void setup_debug_messenger();
@@ -265,7 +277,7 @@ private:
 	void create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, 
 		   VkImageUsageFlags usage, VmaMemoryUsage memoryUsage, VkImage& image, VmaAllocation& imageAllocation);
 	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped);
-	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, ImDrawData* drawData);
 	void transition_image_layout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
 	void copy_buffer_to_image(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 	void copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);

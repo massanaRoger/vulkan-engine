@@ -21,7 +21,6 @@ glm::mat4 Camera::get_projection_matrix(float width, float height) const
 
 void Camera::handle_mouse_movement(float xoffset, float yoffset)
 {
-
 	const float sensitivity = 0.1f;
 	xoffset *= sensitivity;
 	yoffset *= sensitivity;

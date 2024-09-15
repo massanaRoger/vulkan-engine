@@ -7,6 +7,9 @@
 #include "vk_utils.h"
 #include "vulkan/vk_asset_loader.h"
 #include "vulkan/vk_descriptors.h"
+#include "imgui.h"
+#include "imgui_impl_vulkan.h"
+#include "imgui_impl_sdl2.h"
 #include <array>
 #include <cmath>
 #include <unordered_map>
@@ -49,6 +52,7 @@ void Renderer::init_vulkan(SDL_Window* window)
 	create_swapchain();
 	create_image_views();
 	create_render_pass();
+	init_imgui();
 	create_descriptor_set_layout();
 	metalRoughMaterial.build_pipelines(getInstance());
 	create_command_pools();
@@ -178,12 +182,72 @@ void Renderer::create_instance()
 	VK_CHECK(vkCreateInstance(&createInfo, nullptr, &m_instance));
 }
 
+void Renderer::init_imgui()
+{
+	//1: create descriptor pool for IMGUI
+	// the size of the pool is very oversize, but it's copied from imgui demo itself.
+	VkDescriptorPoolSize pool_sizes[] =
+	{
+		{ VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
+		{ VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
+	};
+
+	VkDescriptorPoolCreateInfo pool_info = {};
+	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+	pool_info.maxSets = 1000;
+	pool_info.poolSizeCount = std::size(pool_sizes);
+	pool_info.pPoolSizes = pool_sizes;
+
+	VK_CHECK(vkCreateDescriptorPool(device, &pool_info, nullptr, &m_imguiPool));
+
+	// 2: initialize imgui library
+
+	//this initializes the core structures of imgui
+	ImGui::CreateContext();
+
+	//this initializes imgui for SDL
+	ImGui_ImplSDL2_InitForVulkan(m_window);
+
+	//this initializes imgui for Vulkan
+	ImGui_ImplVulkan_InitInfo init_info = {};
+	init_info.Instance = m_instance;
+	init_info.PhysicalDevice = m_physicalDevice;
+	init_info.Device = device;
+	init_info.Queue = m_graphicsQueue;
+	init_info.DescriptorPool = m_imguiPool;
+	init_info.MinImageCount = 3;
+	init_info.ImageCount = 3;
+	init_info.MSAASamples = msaaSamples;
+	init_info.RenderPass = renderPass;
+
+	ImGui_ImplVulkan_Init(&init_info);
+
+	ImGui_ImplVulkan_CreateFontsTexture();
+}
+
+void Renderer::cleanup_imgui()
+{
+	ImGui_ImplVulkan_Shutdown();
+	vkDestroyDescriptorPool(device, m_imguiPool, nullptr);
+}
+
 void Renderer::cleanup()
 {
 	vkDeviceWaitIdle(device);
 	SDL_DestroyWindow(m_window);
 
 	cleanup_swapchain();
+	cleanup_imgui();
 
 	vkDestroyImageView(device, whiteImage.imageView, nullptr);
 	vmaDestroyImage(m_allocator, whiteImage.image, whiteImage.allocation);
@@ -236,7 +300,7 @@ void Renderer::cleanup()
 	vkDestroyInstance(m_instance, nullptr);
 }
 
-void Renderer::draw_frame(const Camera& camera)
+void Renderer::draw_frame(const Camera& camera, ImDrawData* drawData)
 {
 	update_scene(camera);
 
@@ -257,7 +321,7 @@ void Renderer::draw_frame(const Camera& camera)
 	vkResetFences(device, 1, &m_inFlightFences[m_currentFrame]);
 
 	vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
-	record_command_buffer(m_commandBuffers[m_currentFrame], imageIndex);
+	record_command_buffer(m_commandBuffers[m_currentFrame], imageIndex, drawData);
 
 	VkSubmitInfo submitInfo{};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1361,7 +1425,7 @@ void Renderer::create_command_buffers()
 	VK_CHECK(vkAllocateCommandBuffers(device, &allocInfo, m_commandBuffers.data()));
 }
 
-void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, ImDrawData* drawData) {
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = 0;
@@ -1407,7 +1471,6 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 	scissor.extent = swapchainExtent;
 	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-
 	void* data;
 	vmaMapMemory(m_allocator, m_gpuSceneDataBuffer.allocation, &data);
 	memcpy(data, &m_sceneData, static_cast<size_t>(sizeof(GPUSceneData)));
@@ -1442,6 +1505,8 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 	for (const RenderObject& obj : m_mainDrawContext.transparentSurfaces) {
 		draw(obj);
 	}
+
+	ImGui_ImplVulkan_RenderDrawData(drawData, commandBuffer);
 
 	vkCmdEndRenderPass2(commandBuffer, &subpassEndInfo);
 
