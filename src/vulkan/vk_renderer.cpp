@@ -1941,7 +1941,11 @@ void MeshNode::draw(const glm::mat4& topMatrix, DrawContext &ctx)
 		def.transform = nodeMatrix;
 		def.vertexBufferAddress = mesh->meshBuffers.vertexBufferAddress;
 		
-		ctx.opaqueSurfaces.push_back(def);
+		if (s.material->data.passType == MaterialPass::Transparent) {
+			ctx.transparentSurfaces.push_back(def);
+		} else {
+			ctx.opaqueSurfaces.push_back(def);
+		}
 	}
 
 	Node::draw(topMatrix, ctx);
