@@ -1490,23 +1490,57 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 	writer.write_buffer(0, m_gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 	writer.update_set(device, globalDescriptor);
 
-	auto draw = [&](const RenderObject& draw) {
-		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->pipeline);
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr );
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 1, 1, &draw.material->materialSet, 0, nullptr);
+	MaterialPipeline* lastPipeline = nullptr;
+	MaterialInstance* lastMaterial = nullptr;
+	VkBuffer lastIndexBuffer = VK_NULL_HANDLE;
 
-		vkCmdBindIndexBuffer(commandBuffer, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+	auto draw = [&](const RenderObject& r) {
+
+		if (r.material != lastMaterial) {
+			lastMaterial = r.material;
+			//rebind pipeline and descriptors if the material changed
+			if (r.material->pipeline != lastPipeline) {
+				lastPipeline = r.material->pipeline;
+				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->pipeline);
+				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr );
+
+				VkViewport viewport = {};
+				viewport.x = 0;
+				viewport.y = 0;
+				viewport.width = (float)swapchainExtent.width;
+				viewport.height = (float)swapchainExtent.height;
+				viewport.minDepth = 0.f;
+				viewport.maxDepth = 1.f;
+
+				vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+				VkRect2D scissor = {};
+				scissor.offset.x = 0;
+				scissor.offset.y = 0;
+				scissor.extent.width = swapchainExtent.width;
+				scissor.extent.height = swapchainExtent.height;
+
+				vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+			}
+			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 1, 1, &r.material->materialSet, 0, nullptr);
+		}
+
+		//rebind index buffer if needed
+		if (r.indexBuffer != lastIndexBuffer) {
+			lastIndexBuffer = r.indexBuffer;
+			vkCmdBindIndexBuffer(commandBuffer, r.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+		}
 
 		GPUDrawPushConstants pushConstants;
-		pushConstants.vertexBuffer = draw.vertexBufferAddress;
-		pushConstants.worldMatrix = draw.transform;
-		vkCmdPushConstants(commandBuffer, draw.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
+		pushConstants.vertexBuffer = r.vertexBufferAddress;
+		pushConstants.worldMatrix = r.transform;
+		vkCmdPushConstants(commandBuffer, r.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
 
-		vkCmdDrawIndexed(commandBuffer, draw.indexCount, 1, draw.firstIndex,0,0);
+		vkCmdDrawIndexed(commandBuffer, r.indexCount, 1, r.firstIndex,0,0);
 
 		//add counters for triangles and draws
 		stats.drawcallCount++;
-		stats.triangleCount += draw.indexCount / 3;
+		stats.triangleCount += r.indexCount / 3;
 	};
 
 	for (const RenderObject& obj : m_mainDrawContext.opaqueSurfaces) {
