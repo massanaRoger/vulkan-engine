@@ -1,6 +1,7 @@
 #include "vk_renderer.h"
 #include "SDL_events.h"
 #include "SDL_stdinc.h"
+#include "SDL_timer.h"
 #include "SDL_video.h"
 #include "core/camera.h"
 #include "glm/geometric.hpp"
@@ -108,6 +109,10 @@ void Renderer::init_default_data()
 	materialResources.colorSampler = defaultSamplerLinear;
 	materialResources.metalRoughImage = whiteImage;
 	materialResources.metalRoughSampler = defaultSamplerLinear;
+	materialResources.normalImage = whiteImage;
+	materialResources.normalSampler = defaultSamplerLinear;
+	materialResources.aoImage = whiteImage;
+	materialResources.aoSampler = defaultSamplerLinear;
 
 	//set the uniform buffer for the material data
 	m_materialConstants = create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE);
@@ -136,7 +141,7 @@ void Renderer::init_default_data()
 	m_defaultData = metalRoughMaterial.write_material(device, MaterialPass::MainColor, materialResources, m_globalDescriptorAllocator);
 
 
-	std::string structurePath = { "..\\..\\models\\sponza.glb" };
+	std::string structurePath = { "..\\..\\models\\DamagedHelmet.glb" };
 	auto structureFile = loadGltf(structurePath);
 
 	assert(structureFile.has_value());
@@ -1665,9 +1670,39 @@ void Renderer::update_scene(const Camera& camera)
 
 	m_loadedScenes["structure"]->draw(glm::mat4{ 1.f }, m_mainDrawContext);
 
+	glm::mat4 translation =  glm::translate(glm::vec3{5, 0, 0});
+
+	m_loadedScenes["structure"]->draw(translation, m_mainDrawContext);
+
+	translation =  glm::translate(glm::vec3{10, 0, 0});
+
+	m_loadedScenes["structure"]->draw(translation, m_mainDrawContext);
+
+	translation =  glm::translate(glm::vec3{15, 0, 0});
+
+	m_loadedScenes["structure"]->draw(translation, m_mainDrawContext);
+
+	translation =  glm::translate(glm::vec3{0, 3, 0});
+
+	m_loadedScenes["structure"]->draw(translation, m_mainDrawContext);
+
+	translation =  glm::translate(glm::vec3{5, 3, 0});
+
+	m_loadedScenes["structure"]->draw(translation, m_mainDrawContext);
+
+	translation =  glm::translate(glm::vec3{10, 3, 0});
+
+	m_loadedScenes["structure"]->draw(translation, m_mainDrawContext);
+
+	translation =  glm::translate(glm::vec3{15, 3, 0});
+
+	m_loadedScenes["structure"]->draw(translation, m_mainDrawContext);
+
 	m_sceneData.view = camera.get_view_matrix();
 	// camera projection
 	m_sceneData.proj = camera.get_projection_matrix(swapchainExtent.width, swapchainExtent.height);
+
+	m_sceneData.camPos = glm::vec4(camera.position, 0.0f);
 
 	m_sceneData.viewproj = m_sceneData.proj * m_sceneData.view;
 
@@ -1675,6 +1710,23 @@ void Renderer::update_scene(const Camera& camera)
 	m_sceneData.ambientColor = glm::vec4(.1f);
 	m_sceneData.sunlightColor = glm::vec4(1.f);
 	m_sceneData.sunlightDirection = glm::normalize(glm::vec4(1, 1, 0.5, 0.f));
+
+	static glm::vec4 lightPositions[] = {
+		glm::vec4(0.0f, 0.0f, 10.0f, 0.0f),
+	};
+
+	static glm::vec4 lightColors[] = {
+		glm::vec4(150.0f, 150.0f, 150.0f, 0.0f),
+	};
+
+	for (unsigned int i = 0; i < sizeof(lightPositions) / sizeof(lightPositions[0]); ++i)
+	{
+		glm::vec4 newPos = lightPositions[i] + glm::vec4(sin((SDL_GetTicks() / 1000.0f) * 5.0f) * 5.0f, 0.0f, 0.0f, 0.0f);
+		newPos = lightPositions[i];
+		m_sceneData.lightColors[i] = lightColors[i];
+		m_sceneData.lightPos[i] = lightPositions[i];
+	}
+
 
 	auto end = std::chrono::system_clock::now();
 	auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
@@ -1737,7 +1789,21 @@ void GLTFMetallic_Roughness::build_pipelines(Renderer& renderer)
 	samplerLayoutBinding2.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 	samplerLayoutBinding2.pImmutableSamplers = nullptr;
 
-	std::array<VkDescriptorSetLayoutBinding, 3> bindings = { uboLayoutBinding, samplerLayoutBinding1, samplerLayoutBinding2 };
+	VkDescriptorSetLayoutBinding samplerLayoutBinding3{};
+	samplerLayoutBinding3.binding = 3;
+	samplerLayoutBinding3.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	samplerLayoutBinding3.descriptorCount = 1;
+	samplerLayoutBinding3.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	samplerLayoutBinding3.pImmutableSamplers = nullptr;
+
+	VkDescriptorSetLayoutBinding samplerLayoutBinding4{};
+	samplerLayoutBinding4.binding = 4;
+	samplerLayoutBinding4.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	samplerLayoutBinding4.descriptorCount = 1;
+	samplerLayoutBinding4.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	samplerLayoutBinding4.pImmutableSamplers = nullptr;
+
+	std::array<VkDescriptorSetLayoutBinding, 5> bindings = { uboLayoutBinding, samplerLayoutBinding1, samplerLayoutBinding2, samplerLayoutBinding3, samplerLayoutBinding4 };
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -1926,6 +1992,9 @@ MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, Materia
 	writer.write_buffer(0, resources.dataBuffer, sizeof(MaterialConstants), resources.dataBufferOffset, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 	writer.write_image(1, resources.colorImage.imageView, resources.colorSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	writer.write_image(2, resources.metalRoughImage.imageView, resources.metalRoughSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+	writer.write_image(3, resources.normalImage.imageView, resources.normalSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+	writer.write_image(4, resources.aoImage.imageView, resources.aoSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+
 
 	writer.update_set(device, matData.materialSet);
 

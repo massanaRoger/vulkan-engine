@@ -163,6 +163,10 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 		materialResources.colorSampler = renderer.defaultSamplerLinear;
 		materialResources.metalRoughImage = renderer.whiteImage;
 		materialResources.metalRoughSampler = renderer.defaultSamplerLinear;
+		materialResources.normalImage = renderer.whiteImage;
+		materialResources.normalSampler = renderer.defaultSamplerLinear;
+		materialResources.aoImage = renderer.whiteImage;
+		materialResources.aoSampler = renderer.defaultSamplerLinear;
 
 		// set the uniform buffer for the material data
 		materialResources.dataBuffer = file.materialDataBuffer.buffer;
@@ -175,6 +179,30 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 
 			materialResources.colorImage = images[img];
 			materialResources.colorSampler = file.samplers[sampler];
+		}
+
+		if (mat.pbrData.metallicRoughnessTexture.has_value()) {
+			size_t img = gltf.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex].imageIndex.value();
+			size_t sampler = gltf.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex].samplerIndex.value();
+
+			materialResources.metalRoughImage = images[img];
+			materialResources.metalRoughSampler = file.samplers[sampler];
+		}
+
+		if (mat.normalTexture.has_value()) {
+			size_t img = gltf.textures[mat.normalTexture.value().textureIndex].imageIndex.value();
+			size_t sampler = gltf.textures[mat.normalTexture.value().textureIndex].samplerIndex.value();
+
+			materialResources.normalImage = images[img];
+			materialResources.normalSampler = file.samplers[sampler];
+		}
+
+		if (mat.occlusionTexture.has_value()) {
+			size_t img = gltf.textures[mat.occlusionTexture.value().textureIndex].imageIndex.value();
+			size_t sampler = gltf.textures[mat.occlusionTexture.value().textureIndex].samplerIndex.value();
+
+			materialResources.aoImage = images[img];
+			materialResources.aoSampler = file.samplers[sampler];
 		}
 
 		newMat->data = renderer.metalRoughMaterial.write_material(renderer.device, passType, materialResources, file.descriptorPool);

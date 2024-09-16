@@ -34,18 +34,21 @@ struct GeoSurface {
 
 
 struct GPUMeshBuffers {
-    AllocatedBuffer indexBuffer;
-    AllocatedBuffer vertexBuffer;
-    VkDeviceAddress vertexBufferAddress;
+	AllocatedBuffer indexBuffer;
+	AllocatedBuffer vertexBuffer;
+	VkDeviceAddress vertexBufferAddress;
 };
 
 struct GPUSceneData {
-    glm::mat4 view;
-    glm::mat4 proj;
-    glm::mat4 viewproj;
-    glm::vec4 ambientColor;
-    glm::vec4 sunlightDirection; // w for sun power
-    glm::vec4 sunlightColor;
+	glm::mat4 view;
+	glm::mat4 proj;
+	glm::mat4 viewproj;
+	glm::vec4 ambientColor;
+	glm::vec4 sunlightDirection; // w for sun power
+	glm::vec4 sunlightColor;
+	glm::vec4 camPos;
+	glm::vec4 lightPos[4];
+	glm::vec4 lightColors[4];
 };
 
 struct MeshAsset {
@@ -97,7 +100,11 @@ public:
 		VkSampler colorSampler;
 		AllocatedImage metalRoughImage;
 		VkSampler metalRoughSampler;
-		VkBuffer dataBuffer;
+		AllocatedImage normalImage;
+		VkSampler normalSampler;
+		AllocatedImage aoImage;
+		VkSampler aoSampler;
+ 		VkBuffer dataBuffer;
 		uint32_t dataBufferOffset;
 	};
 
