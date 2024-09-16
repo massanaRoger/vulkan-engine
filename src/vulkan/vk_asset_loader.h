@@ -38,6 +38,6 @@ private:
 };
 
 std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath);
-std::optional<AllocatedImage> load_image(fastgltf::Asset& asset, fastgltf::Image& image);
+std::optional<AllocatedImage> load_image(fastgltf::Asset& asset, fastgltf::Image& image, bool mipmapped);
 
 }

@@ -3,6 +3,7 @@
 #include "SDL_stdinc.h"
 #include "SDL_video.h"
 #include "core/camera.h"
+#include "glm/geometric.hpp"
 #include "vk_types.h"
 #include "vk_utils.h"
 #include "vulkan/vk_asset_loader.h"
@@ -135,7 +136,7 @@ void Renderer::init_default_data()
 	m_defaultData = metalRoughMaterial.write_material(device, MaterialPass::MainColor, materialResources, m_globalDescriptorAllocator);
 
 
-	std::string structurePath = { "..\\..\\models\\structure.glb" };
+	std::string structurePath = { "..\\..\\models\\sponza.glb" };
 	auto structureFile = loadGltf(structurePath);
 
 	assert(structureFile.has_value());
@@ -1145,7 +1146,7 @@ void Renderer::create_image(uint32_t width, uint32_t height, uint32_t mipLevels,
 	}
 }
 
-AllocatedImage Renderer::create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped)
+AllocatedImage Renderer::create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, uint32_t mipLevels = 1)
 {
 	AllocatedImage newImage;
 	newImage.imageFormat = format;
@@ -1170,9 +1171,7 @@ AllocatedImage Renderer::create_image(VkExtent3D size, VkFormat format, VkImageU
 	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 	imageInfo.usage = usage;
 
-	if (mipmapped) {
-		imageInfo.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
-	}
+	imageInfo.mipLevels = mipLevels;
 
 	// always allocate images on dedicated GPU memory
 	VmaAllocationCreateInfo allocinfo = {};
@@ -1222,13 +1221,19 @@ AllocatedImage Renderer::create_image(void* data, VkExtent3D size, VkFormat form
 	memcpy(dataRegion, data, data_size);
 	vmaUnmapMemory(m_allocator, uploadBuffer.allocation);
 
-	AllocatedImage newImage = create_image(size, format, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, mipmapped);
+	int mipLevels = int(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
 
-	transition_image_layout(newImage.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1);
+	AllocatedImage newImage = create_image(size, format, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, mipLevels);
+
+	transition_image_layout(newImage.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);
 
 	copy_buffer_to_image(uploadBuffer.buffer, newImage.image, size.width, size.height);
 
-	transition_image_layout(newImage.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1);
+	if (mipmapped) {
+		generate_mipmaps(newImage.image, VK_FORMAT_R8G8B8A8_SRGB, newImage.imageExtent.width, newImage.imageExtent.height, mipLevels);
+	} else {
+		transition_image_layout(newImage.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1);
+	}
 
 	vmaDestroyBuffer(m_allocator, uploadBuffer.buffer, uploadBuffer.allocation);
 
@@ -1669,7 +1674,7 @@ void Renderer::update_scene(const Camera& camera)
 	//some default lighting parameters
 	m_sceneData.ambientColor = glm::vec4(.1f);
 	m_sceneData.sunlightColor = glm::vec4(1.f);
-	m_sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
+	m_sceneData.sunlightDirection = glm::normalize(glm::vec4(1, 1, 0.5, 0.f));
 
 	auto end = std::chrono::system_clock::now();
 	auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);

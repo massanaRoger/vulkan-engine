@@ -118,7 +118,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 	std::vector<std::shared_ptr<GLTFMaterial>> materials;
 
 	for (fastgltf::Image& image : gltf.images) {
-		std::optional<AllocatedImage> img = load_image(gltf, image);
+		std::optional<AllocatedImage> img = load_image(gltf, image, true);
 
 		if (img.has_value()) {
 			images.push_back(*img);
@@ -332,7 +332,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 
 }
 
-std::optional<AllocatedImage> load_image(fastgltf::Asset& asset, fastgltf::Image& image)
+std::optional<AllocatedImage> load_image(fastgltf::Asset& asset, fastgltf::Image& image, bool mipmapped)
 {
 
 	AllocatedImage newImage {};
@@ -356,7 +356,7 @@ std::optional<AllocatedImage> load_image(fastgltf::Asset& asset, fastgltf::Image
 					imagesize.height = height;
 					imagesize.depth = 1;
 
-					newImage = renderer.create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+					newImage = renderer.create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, mipmapped);
 
 					stbi_image_free(data);
 				}
@@ -370,7 +370,7 @@ std::optional<AllocatedImage> load_image(fastgltf::Asset& asset, fastgltf::Image
 					imagesize.height = height;
 					imagesize.depth = 1;
 
-					newImage = renderer.create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+					newImage = renderer.create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, mipmapped);
 
 					stbi_image_free(data);
 				}
@@ -393,7 +393,7 @@ std::optional<AllocatedImage> load_image(fastgltf::Asset& asset, fastgltf::Image
 							imagesize.height = height;
 							imagesize.depth = 1;
 
-							newImage = renderer.create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+							newImage = renderer.create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, mipmapped);
 
 							stbi_image_free(data);
 						}
