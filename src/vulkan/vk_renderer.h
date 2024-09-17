@@ -165,6 +165,8 @@ public:
 	AllocatedBuffer create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkSharingMode sharingMode);
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped);
 
+	void update_loaded_scenes(Scene& scene);
+
 	void destroy_image(const AllocatedImage& img);
 	void destroy_buffer(const AllocatedBuffer& buffer);
 

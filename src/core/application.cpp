@@ -33,7 +33,6 @@ void Application::init()
 		window_flags
 	);
 	SDL_AddEventWatch(frame_buffer_callback, m_window);
-	create_example_scene(m_scene);
 	m_renderer.init_vulkan(m_window, &m_scene);
 }
 
@@ -76,6 +75,22 @@ void Application::run()
 		ImGui::Text("update time %f ms", m_renderer.stats.sceneUpdateTime);
 		ImGui::Text("triangles %i", m_renderer.stats.triangleCount);
 		ImGui::Text("draws %i", m_renderer.stats.drawcallCount);
+
+		static char loadFilePath[128] = "../../scenes/scene.json";
+		ImGui::Text("Load scene");
+		ImGui::InputTextWithHint("File path", "Enter text here", loadFilePath, IM_ARRAYSIZE(loadFilePath));
+		if (ImGui::Button("Load")) {
+			m_scene.load_scene(loadFilePath);
+		}
+
+		static char saveFilePath[128] = "../../scenes/scene.json";
+		ImGui::Text("Save scene");
+		ImGui::InputTextWithHint("File path", "Enter text here", saveFilePath, IM_ARRAYSIZE(saveFilePath));
+
+		if (ImGui::Button("Save")) {
+			m_scene.save_scene(saveFilePath);
+		}
+
 		ImGui::End();
 
 		if (m_showImguiWindow) {

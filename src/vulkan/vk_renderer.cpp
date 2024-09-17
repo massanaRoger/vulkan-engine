@@ -145,18 +145,6 @@ void Renderer::init_default_data()
 
 	m_defaultData = metalRoughMaterial.write_material(device, MaterialPass::MainColor, materialResources, m_globalDescriptorAllocator);
 
-	auto& registry = scene->get_registry();
-
-	auto view = registry.view<MeshComponent, TransformComponent>();
-
-	for (auto entity : view) {
-		const auto& mesh = view.get<MeshComponent>(entity);
-		auto structureFile = loadGltf(mesh.meshPath);
-
-		assert(structureFile.has_value());
-
-		m_loadedScenes[entity] = *structureFile;
-	}
 }
 
 void Renderer::create_instance()
@@ -1595,6 +1583,22 @@ void Renderer::create_sync_objects()
 		VK_CHECK(vkCreateFence(device, &fenceInfo, nullptr, &m_inFlightFences[i]));
 	}
 
+}
+
+void Renderer::update_loaded_scenes(Scene& scene)
+{
+	auto& registry = scene.get_registry();
+
+	auto view = registry.view<MeshComponent, TransformComponent>();
+
+	for (auto entity : view) {
+		const auto& mesh = view.get<MeshComponent>(entity);
+		auto structureFile = loadGltf(mesh.meshPath);
+
+		assert(structureFile.has_value());
+
+		m_loadedScenes[entity] = *structureFile;
+	}
 }
 
 VkSampleCountFlagBits Renderer::get_max_usable_sample_count()
