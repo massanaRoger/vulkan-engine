@@ -6,6 +6,7 @@ add_library(vma INTERFACE)
 
 add_library(stb_image INTERFACE)
 add_library(tinyobj INTERFACE)
+add_library(entt INTERFACE)
 
 add_subdirectory(fastgltf)
 add_subdirectory(fmt EXCLUDE_FROM_ALL)
@@ -52,3 +53,4 @@ target_link_libraries(imgui PUBLIC Vulkan::Vulkan SDL2::SDL2)
 
 target_include_directories(stb_image INTERFACE stb_image)
 target_include_directories(tinyobj INTERFACE tinyobj)
+target_include_directories(entt INTERFACE entt)

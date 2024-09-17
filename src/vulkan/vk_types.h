@@ -88,6 +88,20 @@ struct Node : public IRenderable {
 	glm::mat4 localTransform;
 	glm::mat4 worldTransform;
 
+	std::shared_ptr<Node> clone() const {
+		auto newNode = std::make_shared<Node>();
+
+		newNode->localTransform = this->localTransform;
+		newNode->worldTransform = this->worldTransform;
+		newNode->parent = this->parent;
+
+		for (const auto& child : children) {
+			newNode->children.push_back(child->clone());
+		}
+
+		return newNode;
+	}
+
 	void refreshTransform(const glm::mat4& parentMatrix)
 	{
 		worldTransform = parentMatrix * localTransform;

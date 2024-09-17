@@ -4,7 +4,11 @@
 #include "SDL_timer.h"
 #include "SDL_video.h"
 #include "core/camera.h"
+#include "core/components.h"
+#include "core/scene.h"
+#include "glm/ext/matrix_float4x4.hpp"
 #include "glm/geometric.hpp"
+#include "glm/gtx/transform.hpp"
 #include "vk_types.h"
 #include "vk_utils.h"
 #include "vulkan/vk_asset_loader.h"
@@ -42,9 +46,10 @@ Renderer& Renderer::getInstance()
 	return instance;
 }
 
-void Renderer::init_vulkan(SDL_Window* window)
+void Renderer::init_vulkan(SDL_Window* window, Scene* sc)
 {
 	m_window = window;
+	scene = sc;
 	create_instance();
 	setup_debug_messenger();
 	create_surface();
@@ -140,14 +145,18 @@ void Renderer::init_default_data()
 
 	m_defaultData = metalRoughMaterial.write_material(device, MaterialPass::MainColor, materialResources, m_globalDescriptorAllocator);
 
+	auto& registry = scene->get_registry();
 
-	std::string structurePath = { "..\\..\\models\\DamagedHelmet.glb" };
-	auto structureFile = loadGltf(structurePath);
+	auto view = registry.view<MeshComponent, TransformComponent>();
 
-	assert(structureFile.has_value());
+	for (auto entity : view) {
+		const auto& mesh = view.get<MeshComponent>(entity);
+		auto structureFile = loadGltf(mesh.meshPath);
 
-	m_loadedScenes["structure"] = *structureFile;
+		assert(structureFile.has_value());
 
+		m_loadedScenes[entity] = *structureFile;
+	}
 }
 
 void Renderer::create_instance()
@@ -801,7 +810,6 @@ void Renderer::create_image_views()
 
 void Renderer::create_descriptor_set_layout()
 {
-    // Descriptor set layout for Scene Data (set = 0, binding = 0)
     VkDescriptorSetLayoutBinding gpuSceneDataBinding{};
     gpuSceneDataBinding.binding = 0;
     gpuSceneDataBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -809,28 +817,24 @@ void Renderer::create_descriptor_set_layout()
     gpuSceneDataBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     gpuSceneDataBinding.pImmutableSamplers = nullptr;
 
-    // Descriptor set layout for Material Data (set = 1, binding = 0)
     VkDescriptorSetLayoutBinding materialDataBinding{};
     materialDataBinding.binding = 0;
     materialDataBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     materialDataBinding.descriptorCount = 1;
-    materialDataBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // Used in fragment shader
+    materialDataBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    // Descriptor set layout for color texture (set = 1, binding = 1)
     VkDescriptorSetLayoutBinding colorTexBinding{};
     colorTexBinding.binding = 1;
     colorTexBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     colorTexBinding.descriptorCount = 1;
-    colorTexBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // Used in fragment shader
+    colorTexBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    // Descriptor set layout for metal-roughness texture (set = 1, binding = 2)
     VkDescriptorSetLayoutBinding metalRoughTexBinding{};
     metalRoughTexBinding.binding = 2;
     metalRoughTexBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     metalRoughTexBinding.descriptorCount = 1;
-    metalRoughTexBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // Used in fragment shader
+    metalRoughTexBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    // Create descriptor set layout for Scene Data (set = 0)
     std::array<VkDescriptorSetLayoutBinding, 1> sceneBindings = { gpuSceneDataBinding };
     VkDescriptorSetLayoutCreateInfo sceneLayoutInfo{};
     sceneLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -839,7 +843,6 @@ void Renderer::create_descriptor_set_layout()
 
     VK_CHECK(vkCreateDescriptorSetLayout(device, &sceneLayoutInfo, nullptr, &m_gpuSceneDataDescriptorLayout));
 
-    // Create descriptor set layout for Material Data (set = 1)
     std::array<VkDescriptorSetLayoutBinding, 3> materialBindings = { materialDataBinding, colorTexBinding, metalRoughTexBinding };
     VkDescriptorSetLayoutCreateInfo materialLayoutInfo{};
     materialLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -1668,35 +1671,23 @@ void Renderer::update_scene(const Camera& camera)
 	m_mainDrawContext.opaqueSurfaces.clear();
 	m_mainDrawContext.transparentSurfaces.clear();
 
-	m_loadedScenes["structure"]->draw(glm::mat4{ 1.f }, m_mainDrawContext);
+	auto& registry = scene->get_registry();
 
-	glm::mat4 translation =  glm::translate(glm::vec3{5, 0, 0});
+	auto meshView = registry.view<TransformComponent, MeshComponent>();
+	for (auto entity : meshView) {
+		const auto& transform = meshView.get<TransformComponent>(entity);
+		glm::mat4 model = glm::mat4(1.0f);
 
-	m_loadedScenes["structure"]->draw(translation, m_mainDrawContext);
+		model = glm::translate(model, transform.position);
 
-	translation =  glm::translate(glm::vec3{10, 0, 0});
+		model = glm::rotate(model, glm::radians(transform.rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
+		model = glm::rotate(model, glm::radians(transform.rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
+		model = glm::rotate(model, glm::radians(transform.rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
 
-	m_loadedScenes["structure"]->draw(translation, m_mainDrawContext);
+		model = glm::scale(model, transform.scale);
 
-	translation =  glm::translate(glm::vec3{15, 0, 0});
-
-	m_loadedScenes["structure"]->draw(translation, m_mainDrawContext);
-
-	translation =  glm::translate(glm::vec3{0, 3, 0});
-
-	m_loadedScenes["structure"]->draw(translation, m_mainDrawContext);
-
-	translation =  glm::translate(glm::vec3{5, 3, 0});
-
-	m_loadedScenes["structure"]->draw(translation, m_mainDrawContext);
-
-	translation =  glm::translate(glm::vec3{10, 3, 0});
-
-	m_loadedScenes["structure"]->draw(translation, m_mainDrawContext);
-
-	translation =  glm::translate(glm::vec3{15, 3, 0});
-
-	m_loadedScenes["structure"]->draw(translation, m_mainDrawContext);
+		m_loadedScenes[entity]->draw(model, m_mainDrawContext);
+	}
 
 	m_sceneData.view = camera.get_view_matrix();
 	// camera projection
@@ -1711,22 +1702,16 @@ void Renderer::update_scene(const Camera& camera)
 	m_sceneData.sunlightColor = glm::vec4(1.f);
 	m_sceneData.sunlightDirection = glm::normalize(glm::vec4(1, 1, 0.5, 0.f));
 
-	static glm::vec4 lightPositions[] = {
-		glm::vec4(0.0f, 0.0f, 10.0f, 0.0f),
-	};
+	auto lightView = registry.view<TransformComponent, LightComponent>();
+	unsigned int i = 0;
+	for (auto entity : lightView) {
+		const auto& transform = lightView.get<TransformComponent>(entity);
+		const auto& light = lightView.get<LightComponent>(entity);
+		m_sceneData.lightColors[i] = glm::vec4(light.color, 0.0f);
+		m_sceneData.lightPos[i] = glm::vec4(transform.position, 0.0f);
 
-	static glm::vec4 lightColors[] = {
-		glm::vec4(150.0f, 150.0f, 150.0f, 0.0f),
-	};
-
-	for (unsigned int i = 0; i < sizeof(lightPositions) / sizeof(lightPositions[0]); ++i)
-	{
-		glm::vec4 newPos = lightPositions[i] + glm::vec4(sin((SDL_GetTicks() / 1000.0f) * 5.0f) * 5.0f, 0.0f, 0.0f, 0.0f);
-		newPos = lightPositions[i];
-		m_sceneData.lightColors[i] = lightColors[i];
-		m_sceneData.lightPos[i] = lightPositions[i];
+		i++;
 	}
-
 
 	auto end = std::chrono::system_clock::now();
 	auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);

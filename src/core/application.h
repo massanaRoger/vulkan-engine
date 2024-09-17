@@ -2,6 +2,7 @@
 
 #include "SDL_events.h"
 #include "SDL_video.h"
+#include "core/scene.h"
 #include "vulkan/vk_renderer.h"
 
 namespace Engine {
@@ -16,6 +17,7 @@ private:
 	VkExtent2D m_windowExtent = { 1700 , 900 };
 	Renderer& m_renderer;
 	Camera m_camera;
+	Scene m_scene;
 	bool m_quit = false;
 	bool m_showImguiWindow = true;
 

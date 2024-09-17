@@ -5,6 +5,7 @@
 #include "SDL_video.h"
 #include "core/camera.h"
 
+#include "core/scene.h"
 #include "imgui.h"
 #include "imgui_impl_vulkan.h"
 #include "imgui_impl_sdl2.h"
@@ -14,7 +15,7 @@
 
 namespace Engine {
 
-Application::Application(): m_renderer(Renderer::getInstance()), m_camera()
+Application::Application(): m_renderer(Renderer::getInstance()), m_camera(), m_scene()
 {}
 
 void Application::init()
@@ -32,7 +33,8 @@ void Application::init()
 		window_flags
 	);
 	SDL_AddEventWatch(frame_buffer_callback, m_window);
-	m_renderer.init_vulkan(m_window);
+	create_example_scene(m_scene);
+	m_renderer.init_vulkan(m_window, &m_scene);
 }
 
 void Application::run()

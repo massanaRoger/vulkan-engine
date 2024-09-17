@@ -2,6 +2,7 @@
 
 #include "SDL_video.h"
 #include "core/camera.h"
+#include "core/scene.h"
 #include "imgui.h"
 #include "vulkan/vk_asset_loader.h"
 #include "vulkan/vk_descriptors.h"
@@ -138,6 +139,7 @@ struct EngineStats {
 
 class Renderer {
 public:
+	Scene* scene;
 	EngineStats stats;
 	bool frameBufferResized = false;
 	VkDevice device;
@@ -153,7 +155,7 @@ public:
 
 	static Renderer& getInstance();
 
-	void init_vulkan(SDL_Window* window);
+	void init_vulkan(SDL_Window* window, Scene* scene);
 	void draw_frame(const Camera& camera, ImDrawData* drawData);
 	GPUMeshBuffers upload_mesh(std::vector<uint32_t>& indices, std::vector<Vertex>& vertices);
 
@@ -227,7 +229,7 @@ private:
 	DrawContext m_mainDrawContext;
 
 	//std::vector<MeshAsset*> m_testMeshes;
-	std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> m_loadedScenes;
+	std::unordered_map<entt::entity, std::shared_ptr<LoadedGLTF>> m_loadedScenes;
 
 	void update_scene(const Camera& camera);
 
