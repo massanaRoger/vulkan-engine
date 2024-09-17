@@ -32,8 +32,8 @@
             "transform": {
                 "position": [
                     0.0,
-                    0.0,
-                    10.0
+                    10.0,
+                    0.0
                 ],
                 "rotation": [
                     0.0,
@@ -72,6 +72,29 @@
         },
         {
             "mesh": {
+                "path": "../../models/floor.glb"
+            },
+            "name": "Floor",
+            "transform": {
+                "position": [
+                    0.0,
+                    -2.0,
+                    0.0
+                ],
+                "rotation": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": [
+                    5.0,
+                    1.0,
+                    5.0
+                ]
+            }
+        },
+        {
+            "mesh": {
                 "path": "../../models/DamagedHelmet.glb"
             },
             "name": "Helmet 1",
@@ -79,7 +102,7 @@
                 "position": [
                     0.0,
                     0.0,
-                    0.0
+                    1.0
                 ],
                 "rotation": [
                     0.0,
