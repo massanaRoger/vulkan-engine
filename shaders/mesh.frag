@@ -17,21 +17,26 @@ float GeometrySchlickGGX(float NdotV, float roughness);
 float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness);
 vec3 fresnelSchlick(float cosTheta, vec3 F0);
 
+
 vec3 getNormalFromMap()
 {
-    vec3 tangentNormal = texture(normalTex, inUV).xyz * 2.0 - 1.0;
+    if (sceneData.hasNormalMap) {
+	vec3 tangentNormal = texture(normalTex, inUV).xyz * 2.0 - 1.0;
 
-    vec3 Q1  = dFdx(inWorldPos);
-    vec3 Q2  = dFdy(inWorldPos);
-    vec2 st1 = dFdx(inUV);
-    vec2 st2 = dFdy(inUV);
+	vec3 Q1  = dFdx(inWorldPos);
+	vec3 Q2  = dFdy(inWorldPos);
+	vec2 st1 = dFdx(inUV);
+	vec2 st2 = dFdy(inUV);
 
-    vec3 N   = normalize(inNormal);
-    vec3 T  = normalize(Q1*st2.t - Q2*st1.t);
-    vec3 B  = -normalize(cross(N, T));
-    mat3 TBN = mat3(T, B, N);
+	vec3 N   = normalize(inNormal);
+	vec3 T  = normalize(Q1 * st2.t - Q2 * st1.t);
+	vec3 B  = -normalize(cross(N, T));
+	mat3 TBN = mat3(T, B, N);
 
-    return normalize(TBN * tangentNormal);
+	return normalize(TBN * tangentNormal);
+    } else {
+	return normalize(inNormal);  // If no normal map, just use vertex normal
+    }
 }
 
 void main() 
@@ -63,13 +68,14 @@ void main()
 	    float G   = GeometrySmith(N, V, L, roughness);      
 	    vec3 F    = fresnelSchlick(max(dot(H, V), 0.0), F0);       
 
+	    vec3 numerator    = NDF * G * F;
+	    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
+	    vec3 specular     = numerator / denominator;  
+
 	    vec3 kS = F;
 	    vec3 kD = vec3(1.0) - kS;
 	    kD *= 1.0 - metallic;
 
-	    vec3 numerator    = NDF * G * F;
-	    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-	    vec3 specular     = numerator / denominator;  
 
 	    // add to outgoing radiance Lo
 	    float NdotL = max(dot(N, L), 0.0);                
@@ -82,7 +88,6 @@ void main()
 
 	color = color / (color + vec3(1.0));
 	color = pow(color, vec3(1.0/2.2));  
-
 	outFragColor = vec4(color, 1.0);
 }
 

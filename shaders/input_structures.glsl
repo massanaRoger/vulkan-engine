@@ -8,6 +8,7 @@ layout(set = 0, binding = 0) uniform  SceneData{
 	vec4 camPos;
 	vec4 lightPos[4];
 	vec4 lightColors[4];
+	bool hasNormalMap;
 } sceneData;
 
 layout(set = 1, binding = 0) uniform GLTFMaterialData{   

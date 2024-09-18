@@ -107,6 +107,7 @@ public:
 		VkSampler aoSampler;
  		VkBuffer dataBuffer;
 		uint32_t dataBufferOffset;
+		bool hasNormalMap;
 	};
 
 	DescriptorWriter writer;

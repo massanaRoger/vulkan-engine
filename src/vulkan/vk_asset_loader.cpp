@@ -167,6 +167,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 		materialResources.normalSampler = renderer.defaultSamplerLinear;
 		materialResources.aoImage = renderer.whiteImage;
 		materialResources.aoSampler = renderer.defaultSamplerLinear;
+		materialResources.hasNormalMap = false;
 
 		// set the uniform buffer for the material data
 		materialResources.dataBuffer = file.materialDataBuffer.buffer;
@@ -195,6 +196,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 
 			materialResources.normalImage = images[img];
 			materialResources.normalSampler = file.samplers[sampler];
+			materialResources.hasNormalMap = true;
 		}
 
 		if (mat.occlusionTexture.has_value()) {
