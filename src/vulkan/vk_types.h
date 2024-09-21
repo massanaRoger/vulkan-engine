@@ -40,9 +40,14 @@ struct MaterialPipeline {
 };
 
 struct MaterialInstance {
-    MaterialPipeline* pipeline;
-    VkDescriptorSet materialSet;
-    MaterialPass passType;
+	MaterialPipeline* pipeline;
+	VkDescriptorSet materialSet;
+	MaterialPass passType;
+};
+
+struct ShadowInstance {
+	MaterialPipeline* pipeline;
+	VkDescriptorSet materialSet;
 };
 
 struct RenderObject {
@@ -57,22 +62,28 @@ struct RenderObject {
 };
 
 struct AllocatedImage {
-    VkImage image;
-    VkImageView imageView;
-    VmaAllocation allocation;
-    VkExtent3D imageExtent;
-    VkFormat imageFormat;
+	VkImage image;
+	VkImageView imageView;
+	VmaAllocation allocation;
+	VkExtent3D imageExtent;
+	VkFormat imageFormat;
 };
 
 struct AllocatedBuffer {
-    VkBuffer buffer;
-    VmaAllocation allocation;
-    VmaAllocationInfo info;
+	VkBuffer buffer;
+	VmaAllocation allocation;
+	VmaAllocationInfo info;
+};
+
+struct ShadowPushConstants {
+	glm::mat4 worldMatrix;
+	glm::mat4 lightSpaceMatrix;
+	VkDeviceAddress vertexBuffer;
 };
 
 struct GPUDrawPushConstants {
-    glm::mat4 worldMatrix;
-    VkDeviceAddress vertexBuffer;
+	glm::mat4 worldMatrix;
+	VkDeviceAddress vertexBuffer;
 };
 
 struct DrawContext;
@@ -127,7 +138,7 @@ const bool c_enableValidationLayers = true;
 #define VK_CHECK(x)                                                     \
 do {                                                                \
 	VkResult err = x;                                               \
-	if (err) {                                                      \
+if (err) {                                                      \
 		fmt::println(fmt::runtime("Detected Vulkan error: {}"), string_VkResult(err)); \
 		abort();                                                    \
 	}                                                               \

@@ -26,6 +26,7 @@ const int MAX_FRAMES_IN_FLIGHT=2;
 
 struct GLTFMaterial {
 	MaterialInstance data;
+	ShadowInstance shadow;
 };
 struct GeoSurface {
 	uint32_t startIndex;
@@ -44,6 +45,7 @@ struct GPUSceneData {
 	glm::mat4 view;
 	glm::mat4 proj;
 	glm::mat4 viewproj;
+	glm::mat4 lightSpaceMatrix;
 	glm::vec4 ambientColor;
 	glm::vec4 sunlightDirection; // w for sun power
 	glm::vec4 sunlightColor;
@@ -82,6 +84,34 @@ struct Vertex {
     glm::vec4 color;
 };
 
+class Shadow {
+public:
+	MaterialPipeline pipeline;
+	VkDescriptorSetLayout shadowLayout;
+	VkRenderPass renderPass;
+	DescriptorWriter writer;
+	AllocatedImage depthImage;
+	VkSampler depthSampler;
+	VkFramebuffer framebuffer;
+
+	struct ShadowResources {
+		VkBuffer dataBuffer;
+		uint32_t dataBufferOffset;
+	};
+
+	struct ShadowConstants {
+		glm::mat4 lightSpaceMatrix;
+		glm::mat4 model;
+		//padding, we need it anyway for uniform buffers
+		glm::vec4 extra[8];
+	};
+
+	void build_pipelines(Renderer& renderer);
+	void clear_resources(VkDevice device);
+
+	ShadowInstance write_material(VkDevice device, const ShadowResources& resources, DescriptorAllocatorGrowable& descriptorAllocator);
+};
+
 class GLTFMetallic_Roughness {
 public:
 	MaterialPipeline opaquePipeline;
@@ -105,6 +135,8 @@ public:
 		VkSampler normalSampler;
 		AllocatedImage aoImage;
 		VkSampler aoSampler;
+		AllocatedImage depthImage;
+		VkSampler depthSampler;
  		VkBuffer dataBuffer;
 		uint32_t dataBufferOffset;
 		bool hasNormalMap;
@@ -140,6 +172,7 @@ struct EngineStats {
 
 class Renderer {
 public:
+	const uint32_t shadowMapize{ 2048 };
 	Scene* scene;
 	EngineStats stats;
 	bool frameBufferResized = false;
@@ -153,6 +186,7 @@ public:
 	AllocatedImage whiteImage;
 
 	GLTFMetallic_Roughness metalRoughMaterial;
+	Shadow shadow;
 
 	static Renderer& getInstance();
 
@@ -275,6 +309,7 @@ private:
 	void create_descriptor_set_layout();
 
 	void create_render_pass();
+	void create_shadow_render_pass();
 
 	void init_default_data();
 

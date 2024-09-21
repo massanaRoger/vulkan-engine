@@ -157,6 +157,10 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 			passType = MaterialPass::Transparent;
 		}
 
+		Shadow::ShadowResources shadowResources;
+		shadowResources.dataBuffer = file.materialDataBuffer.buffer;
+		shadowResources.dataBufferOffset = data_index * sizeof(Shadow::ShadowResources);
+
 		GLTFMetallic_Roughness::MaterialResources materialResources;
 		// default the material textures
 		materialResources.colorImage = renderer.whiteImage;
@@ -167,6 +171,8 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 		materialResources.normalSampler = renderer.defaultSamplerLinear;
 		materialResources.aoImage = renderer.whiteImage;
 		materialResources.aoSampler = renderer.defaultSamplerLinear;
+		materialResources.depthImage = renderer.shadow.depthImage;
+		materialResources.depthSampler = renderer.shadow.depthSampler;
 		materialResources.hasNormalMap = false;
 
 		// set the uniform buffer for the material data
@@ -208,6 +214,9 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 		}
 
 		newMat->data = renderer.metalRoughMaterial.write_material(renderer.device, passType, materialResources, file.descriptorPool);
+		newMat->shadow = renderer.shadow.write_material(renderer.device, shadowResources, file.descriptorPool);
+		
+
 
 		data_index++;
 	}

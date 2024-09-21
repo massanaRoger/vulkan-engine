@@ -7,6 +7,8 @@ layout (location = 0) in vec3 inNormal;
 layout (location = 1) in vec3 inColor;
 layout (location = 2) in vec3 inWorldPos;
 layout (location = 3) in vec2 inUV;
+layout (location = 4) in vec3 inFragPos;
+layout (location = 5) in vec4 inFragPosLightSpace;
 
 layout (location = 0) out vec4 outFragColor;
 
@@ -16,6 +18,7 @@ float DistributionGGX(vec3 N, vec3 H, float roughness);
 float GeometrySchlickGGX(float NdotV, float roughness);
 float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness);
 vec3 fresnelSchlick(float cosTheta, vec3 F0);
+float ShadowCalculation(vec4 fragPosLightSpace);
 
 
 vec3 getNormalFromMap()
@@ -83,12 +86,26 @@ void main()
 
 	}
 
+	float shadow = ShadowCalculation(inFragPosLightSpace);
+
 	vec3 ambient = vec3(0.03) * albedo * ao;
-	vec3 color = ambient + Lo;
+	vec3 color = (ambient + (1.0 - shadow)) * Lo;
 
 	color = color / (color + vec3(1.0));
 	color = pow(color, vec3(1.0/2.2));  
 	outFragColor = vec4(color, 1.0);
+}
+
+float ShadowCalculation(vec4 fragPosLightSpace)
+{
+    // perform perspective divide
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    projCoords = projCoords * 0.5 + 0.5;
+    float closestDepth = texture(shadowMap, projCoords.xy).r;
+    float currentDepth = projCoords.z;
+    float shadow = currentDepth > closestDepth ? 1.0 : 0.0;
+
+    return shadow;
 }
 
 vec3 fresnelSchlick(float cosTheta, vec3 F0)

@@ -9,6 +9,8 @@ layout (location = 0) out vec3 outNormal;
 layout (location = 1) out vec3 outColor;
 layout (location = 2) out vec3 outWorldPos;
 layout (location = 3) out vec2 outUV;
+layout (location = 4) out vec3 outFragPos;
+layout (location = 5) out vec4 outFragPosLightSpace;
 
 struct Vertex {
 	vec3 position;
@@ -42,4 +44,6 @@ void main()
 	outColor = v.color.xyz * materialData.colorFactors.xyz;
 	outUV.x = v.uv_x;
 	outUV.y = v.uv_y;
+	outFragPos = vec3(PushConstants.render_matrix * position);
+	outFragPosLightSpace = sceneData.lightSpaceMatrix * vec4(outFragPos, 1.0);
 }
