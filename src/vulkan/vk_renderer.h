@@ -6,6 +6,7 @@
 #include "imgui.h"
 #include "vulkan/vk_asset_loader.h"
 #include "vulkan/vk_descriptors.h"
+#include "vulkan/vk_swapchain_manager.h"
 #include "vulkan/vk_types.h"
 #include <cstdint>
 #include <memory>
@@ -58,22 +59,6 @@ struct MeshAsset {
 	std::string name;
 	std::vector<GeoSurface> surfaces;
 	GPUMeshBuffers meshBuffers;
-};
-
-struct QueueFamilyIndices {
-	std::optional<uint32_t> graphicsFamily;
-	std::optional<uint32_t> presentFamily;
-	std::optional<uint32_t> transferFamily;
-
-	bool isComplete() {
-		return graphicsFamily.has_value() && presentFamily.has_value() && transferFamily.has_value();
-	}
-};
-
-struct SwapChainSupportDetails {
-	VkSurfaceCapabilitiesKHR capabilities;
-	std::vector<VkSurfaceFormatKHR> formats;
-	std::vector<VkPresentModeKHR> presentModes;
 };
 
 struct Vertex {
@@ -172,12 +157,13 @@ struct EngineStats {
 
 class Renderer {
 public:
+	SwapchainManager m_swapchainManager;
+
 	const uint32_t shadowMapize{ 2048 };
 	Scene* scene;
 	EngineStats stats;
 	bool frameBufferResized = false;
 	VkDevice device;
-	VkExtent2D swapchainExtent;
 	VkRenderPass renderPass;
 	VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 	AllocatedImage errorCheckerboardImage;
@@ -189,6 +175,9 @@ public:
 	Shadow shadow;
 
 	static Renderer& getInstance();
+
+	static void create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, 
+		   VkImageUsageFlags usage, VmaMemoryUsage memoryUsage, VkImage& image, VmaAllocation& imageAllocation, VmaAllocator allocator);
 
 	void init_vulkan(SDL_Window* window, Scene* scene);
 	void draw_frame(const Camera& camera, ImDrawData* drawData);
@@ -223,11 +212,8 @@ private:
 	VkQueue m_transferQueue;
 	QueueFamilyIndices m_queueFamilies;
 
+
 	VkSurfaceKHR m_surface;
-	VkSwapchainKHR m_swapchain;
-	std::vector<VkImage> m_swapchainImages;
-	VkFormat m_swapchainImageFormat;
-	std::vector<VkImageView> m_swapchainImageViews;
 
 	VkDescriptorSetLayout m_gpuSceneDataDescriptorLayout;
 	VkDescriptorSetLayout m_materialDescriptorLayout;
@@ -235,7 +221,6 @@ private:
 	std::vector<DescriptorAllocatorGrowable> m_descriptors;
 	DescriptorAllocatorGrowable m_globalDescriptorAllocator;
 	DescriptorWriter m_descriptorWriter;
-	std::vector<VkFramebuffer> m_swapchainFramebuffers;
 
 	VkDescriptorPool m_imguiPool;
 
@@ -247,8 +232,6 @@ private:
 
 	MaterialInstance m_defaultData;
 
-	AllocatedImage m_drawImage;
-	AllocatedImage m_depthImage;
 
 	AllocatedBuffer m_gpuSceneDataBuffer;
 	AllocatedBuffer m_materialConstants;
@@ -296,13 +279,8 @@ private:
 
 	void create_scene_data();
 
-	SwapChainSupportDetails query_swap_chain_support(VkPhysicalDevice device);
-	VkSurfaceFormatKHR choose_swap_chain_format(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 	VkPresentModeKHR choose_swap_present_mode(const std::vector<VkPresentModeKHR>& availablePresentModes);
 	VkExtent2D choose_swap_extent(const VkSurfaceCapabilitiesKHR& capabilities);
-	void create_swapchain();
-	void recreate_swapchain();
-	void cleanup_swapchain();
 
 	void create_image_views();
 
@@ -322,8 +300,6 @@ private:
 	void create_depth_resources();
 	VkFormat find_supported_format(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 	void generate_mipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
-	void create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, 
-		   VkImageUsageFlags usage, VmaMemoryUsage memoryUsage, VkImage& image, VmaAllocation& imageAllocation);
 	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, uint32_t mipLevels);
 	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, ImDrawData* drawData);
 	void transition_image_layout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
@@ -337,5 +313,7 @@ private:
 
 	VkSampleCountFlagBits get_max_usable_sample_count();
 	void create_allocator();
+
+	void cleanup_swapchain();
 };
 }

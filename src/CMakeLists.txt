@@ -18,6 +18,8 @@ add_executable (engine
   vulkan/vk_descriptors.cpp
   vulkan/vk_asset_loader.h
   vulkan/vk_asset_loader.cpp
+  vulkan/vk_swapchain_manager.h
+  vulkan/vk_swapchain_manager.cpp
   main.cpp
 )
 
