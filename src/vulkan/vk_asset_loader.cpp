@@ -464,13 +464,11 @@ void LoadedGLTF::clearAll()
 	VkDevice dv = renderer.device;
 
 	descriptorPool.destroy_pools(dv);
-
-	renderer.destroy_buffer(materialDataBuffer);
+	renderer.resourceManager.destroy_buffer(materialDataBuffer);
 
 	for (auto& [k, v] : meshes) {
-
-		renderer.destroy_buffer(v->meshBuffers.indexBuffer);
-		renderer.destroy_buffer(v->meshBuffers.vertexBuffer);
+		renderer.resourceManager.destroy_buffer(v->meshBuffers.indexBuffer);
+		renderer.resourceManager.destroy_buffer(v->meshBuffers.vertexBuffer);
 	}
 
 	for (auto& [k, v] : images) {
@@ -479,7 +477,7 @@ void LoadedGLTF::clearAll()
 			//dont destroy the default images
 			continue;
 		}
-		renderer.destroy_image(v);
+		renderer.resourceManager.destroy_image(renderer.device, v);
 	}
 
 	for (auto& sampler : samplers) {

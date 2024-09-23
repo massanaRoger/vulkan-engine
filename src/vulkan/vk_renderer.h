@@ -11,7 +11,6 @@
 #include "vulkan/vk_types.h"
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -158,8 +157,8 @@ struct EngineStats {
 
 class Renderer {
 public:
-	SwapchainManager m_swapchainManager;
-	ResourceManager m_resourceManager;
+	SwapchainManager swapchainManager;
+	ResourceManager resourceManager;
 
 	const uint32_t shadowMapize{ 2048 };
 	Scene* scene;
@@ -186,9 +185,6 @@ public:
 	[[nodiscard]] VkDescriptorSetLayout get_material_descriptor_layout() const;
 
 	void update_loaded_scenes(Scene& scene);
-
-	void destroy_image(const AllocatedImage& img);
-	void destroy_buffer(const AllocatedBuffer& buffer);
 
 	AllocatedBuffer create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkSharingMode sharingMode);
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped);

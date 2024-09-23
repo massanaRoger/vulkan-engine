@@ -23,6 +23,10 @@ public:
 
 	[[nodiscard]] VmaAllocator get_allocator() const;
 
+	void destroy_image(VkDevice device, const AllocatedImage& img);
+	void destroy_buffer(const AllocatedBuffer& buffer);
+
+
 private:
 
 	VmaAllocator m_allocator;

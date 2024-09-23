@@ -376,5 +376,17 @@ void ResourceManager::end_single_time_commands(VkDevice device, VkCommandBuffer 
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
+void ResourceManager::destroy_image(VkDevice device, const AllocatedImage& img)
+{
+
+	vkDestroyImageView(device, img.imageView, nullptr);
+	vmaDestroyImage(m_allocator, img.image, img.allocation);
+}
+
+void ResourceManager::destroy_buffer(const AllocatedBuffer& buffer)
+{
+
+    vmaDestroyBuffer(m_allocator, buffer.buffer, buffer.allocation);
+}
 
 }
