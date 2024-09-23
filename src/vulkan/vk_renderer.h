@@ -6,6 +6,7 @@
 #include "imgui.h"
 #include "vulkan/vk_asset_loader.h"
 #include "vulkan/vk_descriptors.h"
+#include "vulkan/vk_resource_manager.h"
 #include "vulkan/vk_swapchain_manager.h"
 #include "vulkan/vk_types.h"
 #include <cstdint>
@@ -158,6 +159,7 @@ struct EngineStats {
 class Renderer {
 public:
 	SwapchainManager m_swapchainManager;
+	ResourceManager m_resourceManager;
 
 	const uint32_t shadowMapize{ 2048 };
 	Scene* scene;
@@ -176,9 +178,6 @@ public:
 
 	static Renderer& getInstance();
 
-	static void create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, 
-		   VkImageUsageFlags usage, VmaMemoryUsage memoryUsage, VkImage& image, VmaAllocation& imageAllocation, VmaAllocator allocator);
-
 	void init_vulkan(SDL_Window* window, Scene* scene);
 	void draw_frame(const Camera& camera, ImDrawData* drawData);
 	GPUMeshBuffers upload_mesh(std::vector<uint32_t>& indices, std::vector<Vertex>& vertices);
@@ -186,13 +185,13 @@ public:
 	[[nodiscard]] VkDescriptorSetLayout get_gpu_scene_data_descriptor_layout() const;
 	[[nodiscard]] VkDescriptorSetLayout get_material_descriptor_layout() const;
 
-	AllocatedBuffer create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkSharingMode sharingMode);
-	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped);
-
 	void update_loaded_scenes(Scene& scene);
 
 	void destroy_image(const AllocatedImage& img);
 	void destroy_buffer(const AllocatedBuffer& buffer);
+
+	AllocatedBuffer create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkSharingMode sharingMode);
+	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped);
 
 	void cleanup();
 
@@ -202,6 +201,7 @@ public:
 private:
 
 	Renderer() = default;
+
 
 	SDL_Window* m_window;
 	VkInstance m_instance;
@@ -228,7 +228,6 @@ private:
 	VkCommandPool m_transferCommandPool;
 
 	uint32_t m_mipLevels;
-	VmaAllocator m_allocator;
 
 	MaterialInstance m_defaultData;
 
@@ -299,12 +298,7 @@ private:
 	void create_color_resources();
 	void create_depth_resources();
 	VkFormat find_supported_format(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
-	void generate_mipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
-	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, uint32_t mipLevels);
 	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, ImDrawData* drawData);
-	void transition_image_layout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
-	void copy_buffer_to_image(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
-	void copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
 	void create_sync_objects();
 	void create_command_buffers();
@@ -312,7 +306,6 @@ private:
 	uint32_t find_memory_type(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
 	VkSampleCountFlagBits get_max_usable_sample_count();
-	void create_allocator();
 
 	void cleanup_swapchain();
 };

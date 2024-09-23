@@ -14,7 +14,6 @@
 #include "imgui_impl_sdl2.h"
 #include "vulkan/vk_swapchain_manager.h"
 #include <array>
-#include <cmath>
 #include <unordered_map>
 #include <vulkan/vulkan_core.h>
 
@@ -24,7 +23,6 @@
 #include <tiny_obj_loader.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -51,7 +49,7 @@ void Renderer::init_vulkan(SDL_Window* window, Scene* sc)
 	create_surface();
 	pick_physical_device();
 	create_logical_device();
-	create_allocator();
+	m_resourceManager.create_allocator(device, m_physicalDevice, m_instance);
 	m_swapchainManager.create_swapchain(device, m_surface, m_physicalDevice, find_queue_families(m_physicalDevice), m_window);
 	create_image_views();
 	create_shadow_render_pass();
@@ -89,10 +87,9 @@ void Renderer::init_default_data()
 		}
 	}
 
-	whiteImage = create_image((void*)&white, VkExtent3D{ 1, 1, 1 }, VK_FORMAT_R8G8B8A8_UNORM,
-			    VK_IMAGE_USAGE_SAMPLED_BIT, false);
+	whiteImage = m_resourceManager.create_image(device, m_graphicsCommandPool, m_graphicsQueue, m_physicalDevice, (void*)&white, VkExtent3D{ 1, 1, 1 }, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false, m_queueFamilies);
 
-	errorCheckerboardImage = create_image(pixels.data(), VkExtent3D{ 16, 16, 1 }, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+	errorCheckerboardImage = m_resourceManager.create_image(device, m_graphicsCommandPool, m_graphicsQueue, m_physicalDevice, pixels.data(), VkExtent3D{ 16, 16, 1 }, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false, m_queueFamilies);
 
 	VkSamplerCreateInfo sampl = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
 
@@ -119,17 +116,17 @@ void Renderer::init_default_data()
 	materialResources.depthSampler = shadow.depthSampler;
 
 	//set the uniform buffer for the material data
-	m_materialConstants = create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE);
+	m_materialConstants = m_resourceManager.create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_queueFamilies);
 
 	//write the buffer
 	void* mappedData;
-	VK_CHECK(vmaMapMemory(m_allocator, m_materialConstants.allocation, &mappedData));
+	VK_CHECK(vmaMapMemory(m_resourceManager.get_allocator(), m_materialConstants.allocation, &mappedData));
 	GLTFMetallic_Roughness::MaterialConstants* sceneUniformData = (GLTFMetallic_Roughness::MaterialConstants*)mappedData;
 
 	sceneUniformData->colorFactors = glm::vec4{ 1, 1, 1, 1 };
 	sceneUniformData->metal_rough_factors = glm::vec4{ 1, 0.5, 0, 0 };
 
-	vmaUnmapMemory(m_allocator, m_materialConstants.allocation);
+	vmaUnmapMemory(m_resourceManager.get_allocator(), m_materialConstants.allocation);
 
 	materialResources.dataBuffer = m_materialConstants.buffer;
 	materialResources.dataBufferOffset = 0;
@@ -252,10 +249,10 @@ void Renderer::cleanup()
 	cleanup_imgui();
 
 	vkDestroyImageView(device, whiteImage.imageView, nullptr);
-	vmaDestroyImage(m_allocator, whiteImage.image, whiteImage.allocation);
+	vmaDestroyImage(m_resourceManager.get_allocator(), whiteImage.image, whiteImage.allocation);
 
 	vkDestroyImageView(device, errorCheckerboardImage.imageView, nullptr);
-	vmaDestroyImage(m_allocator, errorCheckerboardImage.image, errorCheckerboardImage.allocation);
+	vmaDestroyImage(m_resourceManager.get_allocator(), errorCheckerboardImage.image, errorCheckerboardImage.allocation);
 
 	vkDestroySampler(device, defaultSamplerLinear, nullptr);
 	vkDestroySampler(device, m_defaultSamplerNearest, nullptr);
@@ -265,8 +262,8 @@ void Renderer::cleanup()
 	vkDestroyRenderPass(device, renderPass, nullptr);
 
 	/*for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-		vmaUnmapMemory(m_allocator, m_uniformBuffersMemory[i]);
-		vmaDestroyBuffer(m_allocator, m_uniformBuffers[i], m_uniformBuffersMemory[i]);
+		vmaUnmapMemory(m_resourceManager.get_allocator(), m_uniformBuffersMemory[i]);
+		vmaDestroyBuffer(m_resourceManager.get_allocator(), m_uniformBuffers[i], m_uniformBuffersMemory[i]);
 	}*/
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -274,13 +271,13 @@ void Renderer::cleanup()
 	}
 	m_globalDescriptorAllocator.destroy_pools(device);
 
-	vmaDestroyBuffer(m_allocator, m_gpuSceneDataBuffer.buffer, m_gpuSceneDataBuffer.allocation);
-	vmaDestroyBuffer(m_allocator, m_materialConstants.buffer, m_materialConstants.allocation);
+	vmaDestroyBuffer(m_resourceManager.get_allocator(), m_gpuSceneDataBuffer.buffer, m_gpuSceneDataBuffer.allocation);
+	vmaDestroyBuffer(m_resourceManager.get_allocator(), m_materialConstants.buffer, m_materialConstants.allocation);
 
 	vkDestroyDescriptorSetLayout(device, m_gpuSceneDataDescriptorLayout, nullptr);
 	vkDestroyDescriptorSetLayout(device, m_materialDescriptorLayout, nullptr);
 
-	vmaDestroyAllocator(m_allocator);
+	vmaDestroyAllocator(m_resourceManager.get_allocator());
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 		vkDestroySemaphore(device, m_renderFinishedSemaphores[i], nullptr);
@@ -306,7 +303,7 @@ void Renderer::cleanup_swapchain()
 {
 
 	m_loadedScenes.clear();
-	m_swapchainManager.cleanup_swapchain(device, m_allocator);
+	m_swapchainManager.cleanup_swapchain(device, m_resourceManager.get_allocator());
 }
 
 void Renderer::draw_frame(const Camera& camera, ImDrawData* drawData)
@@ -326,7 +323,7 @@ void Renderer::draw_frame(const Camera& camera, ImDrawData* drawData)
 			VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
 		);
 
-		m_swapchainManager.recreate_swapchain(device, m_window, m_surface, m_physicalDevice, find_queue_families(m_physicalDevice), renderPass, msaaSamples, msaaSamples, depthFormat, m_allocator);
+		m_swapchainManager.recreate_swapchain(device, m_window, m_surface, m_physicalDevice, find_queue_families(m_physicalDevice), renderPass, msaaSamples, msaaSamples, depthFormat, m_resourceManager.get_allocator());
 		return;
 	} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
 		std::cerr << "Failed to acquire swapchain image" << std::endl;
@@ -378,7 +375,7 @@ void Renderer::draw_frame(const Camera& camera, ImDrawData* drawData)
 			VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
 		);
 
-		m_swapchainManager.recreate_swapchain(device, m_window, m_surface, m_physicalDevice, find_queue_families(m_physicalDevice), renderPass, msaaSamples, msaaSamples, depthFormat, m_allocator);
+		m_swapchainManager.recreate_swapchain(device, m_window, m_surface, m_physicalDevice, find_queue_families(m_physicalDevice), renderPass, msaaSamples, msaaSamples, depthFormat, m_resourceManager.get_allocator());
 
 	} else if (result != VK_SUCCESS) {
 		std::cerr << "Failed to present swapchain!" << std::endl;
@@ -868,11 +865,10 @@ void Renderer::create_depth_resources()
 		VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
 	);
 
-	m_swapchainManager.create_depth_images(device, depthFormat, msaaSamples, m_allocator);
+	m_swapchainManager.create_depth_images(device, depthFormat, msaaSamples, m_resourceManager.get_allocator());
 
-
-	create_image(shadowMapize, shadowMapize, 1, VK_SAMPLE_COUNT_1_BIT, depthFormat, VK_IMAGE_TILING_OPTIMAL, 
-	      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_GPU_ONLY, shadow.depthImage.image, shadow.depthImage.allocation, m_allocator);
+	m_resourceManager.create_image(shadowMapize, shadowMapize, 1, VK_SAMPLE_COUNT_1_BIT, depthFormat, VK_IMAGE_TILING_OPTIMAL, 
+	      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_GPU_ONLY, shadow.depthImage.image, shadow.depthImage.allocation);
 
 	VkFormatProperties formatProps;
 	vkGetPhysicalDeviceFormatProperties(m_physicalDevice, depthFormat, &formatProps);
@@ -911,7 +907,7 @@ void Renderer::create_depth_resources()
 
 void Renderer::create_color_resources()
 {
-	m_swapchainManager.create_color_images(device, msaaSamples, m_allocator);
+	m_swapchainManager.create_color_images(device, msaaSamples, m_resourceManager.get_allocator());
 }
 
 VkFormat Renderer::find_supported_format(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features)
@@ -931,350 +927,6 @@ VkFormat Renderer::find_supported_format(const std::vector<VkFormat>& candidates
 	abort();
 }
 
-void Renderer::generate_mipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels)
-{
-	// Check if image format supports linear blitting
-	VkFormatProperties formatProperties;
-	vkGetPhysicalDeviceFormatProperties(m_physicalDevice, imageFormat, &formatProperties);
-
-	if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
-		std::cerr << "Texture image format does not support lienar blitting!" << std::endl;
-		abort();
-	}
-
-	VkCommandBuffer commandBuffer = begin_single_time_commands();
-
-	VkImageMemoryBarrier barrier{};
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.image = image;
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	barrier.subresourceRange.baseArrayLayer = 0;
-	barrier.subresourceRange.layerCount = 1;
-	barrier.subresourceRange.levelCount = 1;
-
-	int32_t mipWidth = texWidth;
-	int32_t mipHeight = texHeight;
-
-	for (uint32_t i = 1; i < mipLevels; i++) {
-		barrier.subresourceRange.baseMipLevel = i - 1;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-
-		vkCmdPipelineBarrier(commandBuffer,
-		       VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-		       0, nullptr,
-		       0, nullptr,
-		       1, &barrier);
-
-		VkImageBlit blit{};
-		blit.srcOffsets[0] = { 0, 0, 0 };
-		blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };
-		blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		blit.srcSubresource.mipLevel = i - 1;
-		blit.srcSubresource.baseArrayLayer = 0;
-		blit.srcSubresource.layerCount = 1;
-		blit.dstOffsets[0] = { 0, 0, 0 };
-		blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 };
-		blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		blit.dstSubresource.mipLevel = i;
-		blit.dstSubresource.baseArrayLayer = 0;
-		blit.dstSubresource.layerCount = 1;
-
-		vkCmdBlitImage(commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
-
-		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-		vkCmdPipelineBarrier(commandBuffer,
-		       VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
-		       0, nullptr,
-		       0, nullptr,
-		       1, &barrier);
-
-		if (mipWidth > 1) mipWidth /= 2;
-		if (mipHeight > 1) mipHeight /= 2;
-	}
-
-	barrier.subresourceRange.baseMipLevel = mipLevels - 1;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-        vkCmdPipelineBarrier(commandBuffer,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
-            0, nullptr,
-            0, nullptr,
-            1, &barrier);
-
-	end_single_time_commands(commandBuffer);
-}
-
-void Renderer::create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, 
-			    VkImageUsageFlags usage, VmaMemoryUsage memoryUsage, VkImage& image, VmaAllocation& imageAllocation, VmaAllocator allocator)
-{
-	VkImageCreateInfo imageInfo{};
-	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	imageInfo.imageType = VK_IMAGE_TYPE_2D;
-	imageInfo.extent.width = width;
-	imageInfo.extent.height = height;
-	imageInfo.extent.depth = 1;
-	imageInfo.mipLevels = mipLevels;
-	imageInfo.arrayLayers = 1;
-	imageInfo.format = format;
-	imageInfo.tiling = tiling;
-	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	imageInfo.usage = usage;
-	imageInfo.samples = numSamples;
-	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-	VmaAllocationCreateInfo allocInfo{};
-	allocInfo.usage = memoryUsage;
-
-	if (vmaCreateImage(allocator, &imageInfo, &allocInfo, &image, &imageAllocation, nullptr) != VK_SUCCESS) {
-		std::cerr << "failed to create image with VMA!" << std::endl;
-		abort();
-	}
-}
-
-AllocatedImage Renderer::create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, uint32_t mipLevels = 1)
-{
-	AllocatedImage newImage;
-	newImage.imageFormat = format;
-	newImage.imageExtent = size;
-
-	VkImageCreateInfo imageInfo = {};
-	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	imageInfo.pNext = nullptr;
-
-	imageInfo.imageType = VK_IMAGE_TYPE_2D;
-
-	imageInfo.format = format;
-	imageInfo.extent = size;
-
-	imageInfo.mipLevels = 1;
-	imageInfo.arrayLayers = 1;
-
-	// MSAA. we will not be using it by default, so default it to 1 sample per pixel.
-	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-
-	// Optimal tiling, which means the image is stored on the best gpu format
-	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-	imageInfo.usage = usage;
-
-	imageInfo.mipLevels = mipLevels;
-
-	// always allocate images on dedicated GPU memory
-	VmaAllocationCreateInfo allocinfo = {};
-	allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	// allocate and create the image
-	VK_CHECK(vmaCreateImage(m_allocator, &imageInfo, &allocinfo, &newImage.image, &newImage.allocation, nullptr));
-
-	// if the format is a depth format, we will need to have it use the correct
-	// aspect flag
-	VkImageAspectFlags aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT;
-	if (format == VK_FORMAT_D32_SFLOAT) {
-		aspectFlag = VK_IMAGE_ASPECT_DEPTH_BIT;
-	}
-
-	// build a image-view for the image
-	VkImageViewCreateInfo imageViewInfo = {};
-	imageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	imageViewInfo.pNext = nullptr;
-
-	imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	imageViewInfo.image = newImage.image;
-	imageViewInfo.format = format;
-	imageViewInfo.subresourceRange.baseMipLevel = 0;
-	imageViewInfo.subresourceRange.levelCount = 1;
-	imageViewInfo.subresourceRange.baseArrayLayer = 0;
-	imageViewInfo.subresourceRange.layerCount = 1;
-	imageViewInfo.subresourceRange.aspectMask = aspectFlag;
-
-	imageViewInfo.subresourceRange.levelCount = imageInfo.mipLevels;
-
-	VK_CHECK(vkCreateImageView(device, &imageViewInfo, nullptr, &newImage.imageView));
-
-
-	return newImage;
-}
-
-AllocatedImage Renderer::create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped)
-{
-	size_t data_size = size.depth * size.width * size.height * 4;
-
-	AllocatedBuffer uploadBuffer = create_buffer(data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE);
-
-	void* dataRegion;
-	vmaMapMemory(m_allocator, uploadBuffer.allocation, &dataRegion);
-	memcpy(dataRegion, data, data_size);
-	vmaUnmapMemory(m_allocator, uploadBuffer.allocation);
-
-	int mipLevels = int(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
-
-	AllocatedImage newImage = create_image(size, format, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, mipLevels);
-
-	transition_image_layout(newImage.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);
-
-	copy_buffer_to_image(uploadBuffer.buffer, newImage.image, size.width, size.height);
-
-	if (mipmapped) {
-		generate_mipmaps(newImage.image, VK_FORMAT_R8G8B8A8_SRGB, newImage.imageExtent.width, newImage.imageExtent.height, mipLevels);
-	} else {
-		transition_image_layout(newImage.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1);
-	}
-
-	vmaDestroyBuffer(m_allocator, uploadBuffer.buffer, uploadBuffer.allocation);
-
-	return newImage;
-}
-
-
-void Renderer::transition_image_layout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels)
-{
-	VkCommandBuffer commandBuffer = begin_single_time_commands();
-
-	VkImageMemoryBarrier barrier{};
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.oldLayout = oldLayout;
-	barrier.newLayout = newLayout;
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image = image;
-	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	barrier.subresourceRange.baseMipLevel = 0;
-	barrier.subresourceRange.levelCount = mipLevels;
-	barrier.subresourceRange.baseArrayLayer = 0;
-	barrier.subresourceRange.layerCount = 1;
-
-	VkPipelineStageFlags sourceStage;
-	VkPipelineStageFlags destinationStage;
-
-	if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-		barrier.srcAccessMask = 0;
-		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-		sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-		destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-	} else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-		sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-		destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-	} else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-		barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-		sourceStage = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-		destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-	} else {
-		std::cerr << "Unsupported layout transition!" << std::endl;
-		abort();
-	}
-
-	vkCmdPipelineBarrier(
-		commandBuffer,
-		sourceStage, destinationStage,
-		0,
-		0, nullptr,
-		0, nullptr,
-		1, &barrier
-	);
-
-	end_single_time_commands(commandBuffer);
-}
-
-void Renderer::copy_buffer_to_image(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
-	VkCommandBuffer commandBuffer = begin_single_time_commands();
-
-	VkBufferImageCopy region{};
-	region.bufferOffset = 0;
-	region.bufferRowLength = 0;
-	region.bufferImageHeight = 0;
-
-	region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	region.imageSubresource.mipLevel = 0;
-	region.imageSubresource.baseArrayLayer = 0;
-	region.imageSubresource.layerCount = 1;
-
-	region.imageOffset = {0, 0, 0};
-	region.imageExtent = {
-		width,
-		height,
-		1
-	};
-
-	vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-	end_single_time_commands(commandBuffer);
-}
-
-AllocatedBuffer Renderer::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkSharingMode sharingMode)
-{
-	VkBufferCreateInfo bufferInfo{};
-	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferInfo.size = size;
-	bufferInfo.usage = usage;
-	bufferInfo.sharingMode = sharingMode;
-	uint32_t indices[] = { m_queueFamilies.graphicsFamily.value(), m_queueFamilies.transferFamily.value() };
-	if (bufferInfo.sharingMode == VK_SHARING_MODE_CONCURRENT) {
-		bufferInfo.pQueueFamilyIndices = indices;
-		bufferInfo.queueFamilyIndexCount = 2;
-	}
-
-	VmaAllocationCreateInfo vmaallocInfo = {};
-	vmaallocInfo.usage = memoryUsage;
-	vmaallocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-	AllocatedBuffer newBuffer;
-	vmaCreateBuffer(m_allocator, &bufferInfo, &vmaallocInfo, &newBuffer.buffer, &newBuffer.allocation, &newBuffer.info);
-
-	return newBuffer;
-}
-
-VkCommandBuffer Renderer::begin_single_time_commands() {
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = m_graphicsCommandPool;
-    allocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-    return commandBuffer;
-}
-
-void Renderer::end_single_time_commands(VkCommandBuffer commandBuffer) {
-    vkEndCommandBuffer(commandBuffer);
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
-
-    vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(m_graphicsQueue);
-
-    vkFreeCommandBuffers(device, m_graphicsCommandPool, 1, &commandBuffer);
-}
-
 void Renderer::create_descriptor_sets()
 {
 	m_descriptors.resize(MAX_FRAMES_IN_FLIGHT);
@@ -1290,18 +942,6 @@ void Renderer::create_descriptor_sets()
 		m_descriptors[i].init(device, 1000, frameSizes);
 	}
 }
-
-void Renderer::copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
-{
-	VkCommandBuffer commandBuffer = begin_single_time_commands();
-
-	VkBufferCopy copyRegion{};
-	copyRegion.size = size;
-	vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
-
-	end_single_time_commands(commandBuffer);
-}
-
 
 uint32_t Renderer::find_memory_type(uint32_t typeFilter, VkMemoryPropertyFlags properties)
 {
@@ -1320,7 +960,7 @@ uint32_t Renderer::find_memory_type(uint32_t typeFilter, VkMemoryPropertyFlags p
 
 void Renderer::create_scene_data()
 {
-	m_gpuSceneDataBuffer = create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE);
+	m_gpuSceneDataBuffer = m_resourceManager.create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_queueFamilies);
 }
 void Renderer::create_command_buffers()
 {
@@ -1371,9 +1011,9 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 	writer.update_set(device, globalDescriptor);
 
 	void* data;
-	vmaMapMemory(m_allocator, m_gpuSceneDataBuffer.allocation, &data);
+	vmaMapMemory(m_resourceManager.get_allocator(), m_gpuSceneDataBuffer.allocation, &data);
 	memcpy(data, &m_sceneData, static_cast<size_t>(sizeof(GPUSceneData)));
-	vmaUnmapMemory(m_allocator, m_gpuSceneDataBuffer.allocation);
+	vmaUnmapMemory(m_resourceManager.get_allocator(), m_gpuSceneDataBuffer.allocation);
 
 	std::array<VkClearValue, 2> clearValues;
 
@@ -1588,17 +1228,15 @@ VkSampleCountFlagBits Renderer::get_max_usable_sample_count()
 	return VK_SAMPLE_COUNT_1_BIT;
 }
 
-void Renderer::create_allocator()
+AllocatedBuffer Renderer::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkSharingMode sharingMode)
 {
-	VmaAllocatorCreateInfo allocatorInfo = {};
-	allocatorInfo.physicalDevice = m_physicalDevice;
-	allocatorInfo.device = device;
-	allocatorInfo.instance = m_instance;
-	allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-
-	vmaCreateAllocator(&allocatorInfo, &m_allocator);
+	return m_resourceManager.create_buffer(size, usage, memoryUsage, sharingMode, m_queueFamilies);
 }
 
+AllocatedImage Renderer::create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped)
+{
+	return m_resourceManager.create_image(device, m_graphicsCommandPool, m_graphicsQueue, m_physicalDevice, data, size, format, usage, mipmapped, m_queueFamilies);
+}
 
 GPUMeshBuffers Renderer::upload_mesh(std::vector<uint32_t>& indices, std::vector<Vertex>& vertices)
 {
@@ -1607,34 +1245,34 @@ GPUMeshBuffers Renderer::upload_mesh(std::vector<uint32_t>& indices, std::vector
 
 	GPUMeshBuffers newSurface;
 
-	AllocatedBuffer vertexStagingBuffer = create_buffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE);
+	AllocatedBuffer vertexStagingBuffer = m_resourceManager.create_buffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_queueFamilies);
 
 	void* vertexData;
-	vmaMapMemory(m_allocator, vertexStagingBuffer.allocation, &vertexData);
+	vmaMapMemory(m_resourceManager.get_allocator(), vertexStagingBuffer.allocation, &vertexData);
 	memcpy(vertexData, vertices.data(), static_cast<size_t>(vertexBufferSize));
-	vmaUnmapMemory(m_allocator, vertexStagingBuffer.allocation);
+	vmaUnmapMemory(m_resourceManager.get_allocator(), vertexStagingBuffer.allocation);
 
-	newSurface.vertexBuffer = create_buffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SHARING_MODE_CONCURRENT);
+	newSurface.vertexBuffer = m_resourceManager.create_buffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SHARING_MODE_CONCURRENT, m_queueFamilies);
 
 	VkBufferDeviceAddressInfo deviceAddressInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = newSurface.vertexBuffer.buffer };
 	newSurface.vertexBufferAddress = vkGetBufferDeviceAddress(device, &deviceAddressInfo);
 
-	copy_buffer(vertexStagingBuffer.buffer, newSurface.vertexBuffer.buffer, vertexBufferSize);
+	m_resourceManager.copy_buffer(device, m_graphicsCommandPool, m_graphicsQueue, vertexStagingBuffer.buffer, newSurface.vertexBuffer.buffer, vertexBufferSize);
 
-	vmaDestroyBuffer(m_allocator, vertexStagingBuffer.buffer, vertexStagingBuffer.allocation);
+	vmaDestroyBuffer(m_resourceManager.get_allocator(), vertexStagingBuffer.buffer, vertexStagingBuffer.allocation);
 
-	AllocatedBuffer indexStagingBuffer = create_buffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,  VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE);
+	AllocatedBuffer indexStagingBuffer = m_resourceManager.create_buffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,  VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_queueFamilies);
 
 	void* indexData;
-	vmaMapMemory(m_allocator, indexStagingBuffer.allocation, &indexData);
+	vmaMapMemory(m_resourceManager.get_allocator(), indexStagingBuffer.allocation, &indexData);
 	memcpy(indexData, indices.data(), static_cast<size_t>(indexBufferSize));
-	vmaUnmapMemory(m_allocator, indexStagingBuffer.allocation);
+	vmaUnmapMemory(m_resourceManager.get_allocator(), indexStagingBuffer.allocation);
 
-	newSurface.indexBuffer = create_buffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SHARING_MODE_EXCLUSIVE);
+	newSurface.indexBuffer = m_resourceManager.create_buffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SHARING_MODE_EXCLUSIVE, m_queueFamilies);
 
-	copy_buffer(indexStagingBuffer.buffer, newSurface.indexBuffer.buffer, indexBufferSize);
+	m_resourceManager.copy_buffer(device, m_graphicsCommandPool, m_graphicsQueue, indexStagingBuffer.buffer, newSurface.indexBuffer.buffer, indexBufferSize);
 
-	vmaDestroyBuffer(m_allocator, indexStagingBuffer.buffer, indexStagingBuffer.allocation);
+	vmaDestroyBuffer(m_resourceManager.get_allocator(), indexStagingBuffer.buffer, indexStagingBuffer.allocation);
 
 	return newSurface;
 }
@@ -1706,12 +1344,12 @@ void Renderer::update_scene(const Camera& camera)
 void Renderer::destroy_image(const AllocatedImage& img)
 {
 	vkDestroyImageView(device, img.imageView, nullptr);
-	vmaDestroyImage(m_allocator, img.image, img.allocation);
+	vmaDestroyImage(m_resourceManager.get_allocator(), img.image, img.allocation);
 }
 
 void Renderer::destroy_buffer(const AllocatedBuffer& buffer)
 {
-    vmaDestroyBuffer(m_allocator, buffer.buffer, buffer.allocation);
+    vmaDestroyBuffer(m_resourceManager.get_allocator(), buffer.buffer, buffer.allocation);
 }
 
 [[nodiscard]] VkDescriptorSetLayout Renderer::get_gpu_scene_data_descriptor_layout() const

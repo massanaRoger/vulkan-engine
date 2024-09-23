@@ -4,6 +4,7 @@
 #include "SDL_vulkan.h"
 #include "vulkan/vk_renderer.h"
 #include "vulkan/vk_types.h"
+#include <iostream>
 #include <vulkan/vulkan_core.h>
 
 namespace Engine {
@@ -88,8 +89,28 @@ void SwapchainManager::create_swapchain_frame_buffers(VkDevice device, VkRenderP
 
 void SwapchainManager::create_depth_images(VkDevice device, VkFormat depthFormat, VkSampleCountFlagBits samples, VmaAllocator allocator)
 {
-	Renderer::create_image(m_swapchainExtent.width, m_swapchainExtent.height, 1, samples, depthFormat, VK_IMAGE_TILING_OPTIMAL, 
-	      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VMA_MEMORY_USAGE_GPU_ONLY, m_depthImage.image, m_depthImage.allocation, allocator);
+	VkImageCreateInfo imageInfo{};
+	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imageInfo.imageType = VK_IMAGE_TYPE_2D;
+	imageInfo.extent.width = m_swapchainExtent.width;
+	imageInfo.extent.height = m_swapchainExtent.height;
+	imageInfo.extent.depth = 1;
+	imageInfo.mipLevels = 1;
+	imageInfo.arrayLayers = 1;
+	imageInfo.format = depthFormat;
+	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	imageInfo.samples = samples;
+	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	VmaAllocationCreateInfo allocInfo{};
+	allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+	if (vmaCreateImage(allocator, &imageInfo, &allocInfo, &m_depthImage.image, &m_depthImage.allocation, nullptr) != VK_SUCCESS) {
+		std::cerr << "failed to create image with VMA!" << std::endl;
+		abort();
+	}
 
 	VkImageViewCreateInfo viewInfo{};
 	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -109,9 +130,28 @@ void SwapchainManager::create_color_images(VkDevice device, VkSampleCountFlagBit
 {
 	VkFormat colorFormat = m_swapchainImageFormat;
 
-	Renderer::create_image(m_swapchainExtent.width, m_swapchainExtent.height, 1, samples, colorFormat,
-	      VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-	      VMA_MEMORY_USAGE_GPU_ONLY, m_drawImage.image, m_drawImage.allocation, allocator);
+	VkImageCreateInfo imageInfo{};
+	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imageInfo.imageType = VK_IMAGE_TYPE_2D;
+	imageInfo.extent.width = m_swapchainExtent.width;
+	imageInfo.extent.height = m_swapchainExtent.height;
+	imageInfo.extent.depth = 1;
+	imageInfo.mipLevels = 1;
+	imageInfo.arrayLayers = 1;
+	imageInfo.format = colorFormat;
+	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	imageInfo.samples = samples;
+	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	VmaAllocationCreateInfo allocInfo{};
+	allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+	if (vmaCreateImage(allocator, &imageInfo, &allocInfo, &m_drawImage.image, &m_drawImage.allocation, nullptr) != VK_SUCCESS) {
+		std::cerr << "failed to create image with VMA!" << std::endl;
+		abort();
+	}
 
 	VkImageViewCreateInfo viewInfo{};
 	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
