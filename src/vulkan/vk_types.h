@@ -75,14 +75,9 @@ struct AllocatedBuffer {
 	VmaAllocationInfo info;
 };
 
-struct ShadowPushConstants {
+struct PushConstants {
 	glm::mat4 worldMatrix;
 	glm::mat4 lightSpaceMatrix;
-	VkDeviceAddress vertexBuffer;
-};
-
-struct GPUDrawPushConstants {
-	glm::mat4 worldMatrix;
 	VkDeviceAddress vertexBuffer;
 };
 

@@ -27,7 +27,8 @@ layout(buffer_reference, std430) readonly buffer VertexBuffer{
 //push constants block
 layout( push_constant ) uniform constants
 {
-	mat4 render_matrix;
+	mat4 renderMatrix;
+	mat4 lightSpaceMatrix;
 	VertexBuffer vertexBuffer;
 } PushConstants;
 
@@ -37,13 +38,13 @@ void main()
 	
 	vec4 position = vec4(v.position, 1.0f);
 
-	gl_Position =  sceneData.viewproj * PushConstants.render_matrix * position;
+	gl_Position =  sceneData.viewproj * PushConstants.renderMatrix * position;
 
-	outNormal = (PushConstants.render_matrix * vec4(v.normal, 0.f)).xyz;
-	outWorldPos = (PushConstants.render_matrix * position).xyz / (PushConstants.render_matrix * position).w;
+	outNormal = (PushConstants.renderMatrix * vec4(v.normal, 0.f)).xyz;
+	outWorldPos = (PushConstants.renderMatrix * position).xyz / (PushConstants.renderMatrix * position).w;
 	outColor = v.color.xyz * materialData.colorFactors.xyz;
 	outUV.x = v.uv_x;
 	outUV.y = v.uv_y;
-	outFragPos = vec3(PushConstants.render_matrix * position);
-	outFragPosLightSpace = sceneData.lightSpaceMatrix * vec4(outFragPos, 1.0);
+	outFragPos = vec3(PushConstants.renderMatrix * position);
+	outFragPosLightSpace = PushConstants.lightSpaceMatrix * vec4(outFragPos, 1.0);
 }

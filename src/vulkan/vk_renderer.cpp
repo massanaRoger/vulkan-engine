@@ -33,6 +33,9 @@
 
 namespace Engine {
 
+glm::mat4 lightViewMatrix = glm::lookAt(glm::vec3(-2.0f, 4.0f, -1.0f), 
+                                  glm::vec3( 0.0f, 0.0f,  0.0f), 
+                                  glm::vec3( 0.0f, 1.0f,  0.0f));  
 
 Renderer& Renderer::getInstance()
 {
@@ -1057,15 +1060,12 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 
 			float near_plane = 1.0f, far_plane = 7.5f;
 			glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
-			glm::mat4 lightViewMatrix = glm::lookAt(glm::vec3(-2.0f, 4.0f, -1.0f), 
-					   glm::vec3( 0.0f, 0.0f,  0.0f), 
-					   glm::vec3( 0.0f, 1.0f,  0.0f));
 
-			ShadowPushConstants pushConstants;
+			PushConstants pushConstants;
 			pushConstants.vertexBuffer = obj.vertexBufferAddress;
 			pushConstants.worldMatrix = obj.transform;
 			pushConstants.lightSpaceMatrix = lightProjection * lightViewMatrix;
-			vkCmdPushConstants(commandBuffer, shadow.pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ShadowPushConstants), &pushConstants);
+			vkCmdPushConstants(commandBuffer, shadow.pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
 
 			vkCmdDrawIndexed(commandBuffer, obj.indexCount, 1, obj.firstIndex,0,0);
 		}
@@ -1139,10 +1139,15 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 			vkCmdBindIndexBuffer(commandBuffer, r.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 		}
 
-		GPUDrawPushConstants pushConstants;
+		float near_plane = 1.0f, far_plane = 7.5f;
+		glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
+
+
+		PushConstants pushConstants;
 		pushConstants.vertexBuffer = r.vertexBufferAddress;
 		pushConstants.worldMatrix = r.transform;
-		vkCmdPushConstants(commandBuffer, r.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
+		pushConstants.lightSpaceMatrix = lightProjection * lightViewMatrix;
+		vkCmdPushConstants(commandBuffer, r.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
 
 		vkCmdDrawIndexed(commandBuffer, r.indexCount, 1, r.firstIndex, 0, 0);
 
@@ -1310,10 +1315,6 @@ void Renderer::update_scene(const Camera& camera)
 	float near_plane = 1.0f, far_plane = 7.5f;
 	glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
 
-	glm::mat4 lightViewMatrix = glm::lookAt(glm::vec3(-2.0f, 4.0f, -1.0f), 
-				   glm::vec3( 0.0f, 0.0f,  0.0f), 
-				   glm::vec3( 0.0f, 1.0f,  0.0f));
-
 	m_sceneData.lightSpaceMatrix = lightProjection * lightViewMatrix;
 
 	//some default lighting parameters
@@ -1360,7 +1361,7 @@ void Shadow::build_pipelines(Renderer& renderer)
 
 	VkPushConstantRange matrixRange{};
 	matrixRange.offset = 0;
-	matrixRange.size = sizeof(ShadowPushConstants);
+	matrixRange.size = sizeof(PushConstants);
 	matrixRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
 	VkDescriptorSetLayoutBinding uboLayoutBinding{};
@@ -1539,7 +1540,7 @@ void GLTFMetallic_Roughness::build_pipelines(Renderer& renderer)
 
 	VkPushConstantRange matrixRange{};
 	matrixRange.offset = 0;
-	matrixRange.size = sizeof(GPUDrawPushConstants);
+	matrixRange.size = sizeof(PushConstants);
 	matrixRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
 	VkDescriptorSetLayoutBinding uboLayoutBinding{};
