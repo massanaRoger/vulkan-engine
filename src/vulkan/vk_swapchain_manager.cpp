@@ -63,6 +63,29 @@ void SwapchainManager::create_swapchain(VkDevice device, VkSurfaceKHR surface, V
 	vkGetSwapchainImagesKHR(device, m_swapchain, &imageCount, m_swapchainImages.data());
 }
 
+void SwapchainManager::create_cubemap_framebuffers(VkDevice device, VkRenderPass renderPass)
+{
+	m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
+	for (size_t i = 0; i < m_swapchainFramebuffers.size(); i++) {
+		std::array<VkImageView, 3> attachments = {
+			m_drawImage.imageView,
+			m_depthImage.imageView,
+			m_swapchainImageViews[i],
+		};
+
+		VkFramebufferCreateInfo framebufferInfo = {};
+		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		framebufferInfo.renderPass = renderPass;
+		framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+		framebufferInfo.pAttachments = attachments.data();
+		framebufferInfo.width = m_swapchainExtent.width;
+		framebufferInfo.height = m_swapchainExtent.height;
+		framebufferInfo.layers = 1;
+
+		VK_CHECK(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &m_swapchainFramebuffers[i]));
+	}
+}
+
 void SwapchainManager::create_swapchain_frame_buffers(VkDevice device, VkRenderPass renderPass)
 {
 

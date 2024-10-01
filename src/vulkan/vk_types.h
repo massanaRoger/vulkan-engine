@@ -45,6 +45,11 @@ struct MaterialInstance {
 	MaterialPass passType;
 };
 
+struct ShadowCubeInstance {
+	MaterialPipeline* pipeline;
+	VkDescriptorSet materialSet;
+};
+
 struct ShadowInstance {
 	MaterialPipeline* pipeline;
 	VkDescriptorSet materialSet;

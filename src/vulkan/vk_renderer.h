@@ -28,6 +28,7 @@ const int MAX_FRAMES_IN_FLIGHT=2;
 struct GLTFMaterial {
 	MaterialInstance data;
 	ShadowInstance shadow;
+	ShadowCubeInstance shadowcube;
 };
 struct GeoSurface {
 	uint32_t startIndex;
@@ -40,6 +41,13 @@ struct GPUMeshBuffers {
 	AllocatedBuffer indexBuffer;
 	AllocatedBuffer vertexBuffer;
 	VkDeviceAddress vertexBufferAddress;
+};
+
+struct OffscreenSceneData {
+	glm::mat4 view;
+	glm::mat4 proj;
+	glm::mat4 model;
+	glm::vec4 lightPos;
 };
 
 struct GPUSceneData {
@@ -67,6 +75,39 @@ struct Vertex {
     glm::vec3 normal;
     float uv_y;
     glm::vec4 color;
+};
+
+class ShadowCube {
+public:
+	MaterialPipeline pipeline;
+	VkDescriptorSetLayout shadowLayout;
+	VkRenderPass renderPass;
+	DescriptorWriter writer;
+	AllocatedImage depthImage;
+	AllocatedImage cubeMap;
+
+	VkSampler depthSampler;
+	VkSampler cubemapSampler;
+
+	VkFramebuffer framebuffers[6];
+	VkImageView faceImageViews[6];
+
+	struct ShadowResources {
+		VkBuffer dataBuffer;
+		uint32_t dataBufferOffset;
+	};
+
+	struct ShadowConstants {
+		glm::mat4 lightSpaceMatrix;
+		glm::mat4 model;
+		//padding, we need it anyway for uniform buffers
+		glm::vec4 extra[8];
+	};
+
+	void build_pipelines(Renderer& renderer);
+	void clear_resources(VkDevice device);
+
+	ShadowCubeInstance write_material(VkDevice device, const ShadowResources& resources, DescriptorAllocatorGrowable& descriptorAllocator);
 };
 
 class Shadow {
@@ -124,7 +165,7 @@ public:
 		VkSampler depthSampler;
  		VkBuffer dataBuffer;
 		uint32_t dataBufferOffset;
-		bool hasNormalMap;
+		uint32_t hasNormalMap;
 	};
 
 	DescriptorWriter writer;
@@ -173,7 +214,8 @@ public:
 	AllocatedImage whiteImage;
 
 	GLTFMetallic_Roughness metalRoughMaterial;
-	Shadow shadow;
+	// Shadow shadow;
+	ShadowCube shadowcube;
 
 	static Renderer& getInstance();
 
@@ -213,6 +255,7 @@ private:
 
 	VkDescriptorSetLayout m_gpuSceneDataDescriptorLayout;
 	VkDescriptorSetLayout m_materialDescriptorLayout;
+	VkDescriptorSetLayout m_offscreenSceneDataDescriptorLayout;
 
 	std::vector<DescriptorAllocatorGrowable> m_descriptors;
 	DescriptorAllocatorGrowable m_globalDescriptorAllocator;
@@ -229,6 +272,7 @@ private:
 
 
 	AllocatedBuffer m_gpuSceneDataBuffer;
+	AllocatedBuffer m_offscrenSceneDataBuffer;
 	AllocatedBuffer m_materialConstants;
 
 	VkSampler m_defaultSamplerNearest;
@@ -240,6 +284,7 @@ private:
 
 	uint32_t m_currentFrame;
 	GPUSceneData m_sceneData;
+	OffscreenSceneData m_offscreenData;
 
 	DrawContext m_mainDrawContext;
 
@@ -281,8 +326,11 @@ private:
 
 	void create_descriptor_set_layout();
 
+	void prepare_cube_map();
+
 	void create_render_pass();
 	void create_shadow_render_pass();
+	void create_shadowcube_render_pass();
 
 	void init_default_data();
 
@@ -295,6 +343,8 @@ private:
 	void create_depth_resources();
 	VkFormat find_supported_format(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 	void record_command_buffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, ImDrawData* drawData);
+
+	void update_cube_face(uint32_t faceIndex, VkCommandBuffer commandBuffer, VkDescriptorSet descriptor);
 
 	void create_sync_objects();
 	void create_command_buffers();

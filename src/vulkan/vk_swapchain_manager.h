@@ -34,6 +34,8 @@ public:
 	void create_swapchain_image_views(VkDevice device);
 	void create_swapchain_frame_buffers(VkDevice device, VkRenderPass renderPass);
 
+	void create_cubemap_framebuffers(VkDevice device, VkRenderPass renderPass);
+
 	void create_depth_images(VkDevice device, VkFormat depthFormat, VkSampleCountFlagBits samples, VmaAllocator allocator);
 	void create_color_images(VkDevice device, VkSampleCountFlagBits samples, VmaAllocator allocator);
 

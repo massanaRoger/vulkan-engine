@@ -70,8 +70,7 @@ AllocatedBuffer ResourceManager::create_buffer(VkDeviceSize size, VkBufferUsageF
 	return newBuffer;
 }
 
-void ResourceManager::create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, 
-			    VkImageUsageFlags usage, VmaMemoryUsage memoryUsage, VkImage& image, VmaAllocation& imageAllocation)
+void ResourceManager::create_image(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VmaMemoryUsage memoryUsage, VkImage& image, VmaAllocation& imageAllocation, VkImageCreateFlags flags, uint32_t arrayLayers)
 {
 	VkImageCreateInfo imageInfo{};
 	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -80,13 +79,14 @@ void ResourceManager::create_image(uint32_t width, uint32_t height, uint32_t mip
 	imageInfo.extent.height = height;
 	imageInfo.extent.depth = 1;
 	imageInfo.mipLevels = mipLevels;
-	imageInfo.arrayLayers = 1;
+	imageInfo.arrayLayers = arrayLayers;
 	imageInfo.format = format;
 	imageInfo.tiling = tiling;
 	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	imageInfo.usage = usage;
 	imageInfo.samples = numSamples;
 	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	imageInfo.flags = flags;
 
 	VmaAllocationCreateInfo allocInfo{};
 	allocInfo.usage = memoryUsage;
@@ -161,7 +161,7 @@ AllocatedImage ResourceManager::create_image(VkDevice device, VkExtent3D size, V
 	return newImage;
 }
 
-void ResourceManager::transition_image_layout(VkDevice device, VkCommandPool commandPool, VkQueue queue, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels)
+void ResourceManager::transition_image_layout(VkDevice device, VkCommandPool commandPool, VkQueue queue, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels, uint32_t layers, VkImageAspectFlags aspectMask)
 {
 	VkCommandBuffer commandBuffer = begin_single_time_commands(device, commandPool);
 
@@ -172,11 +172,11 @@ void ResourceManager::transition_image_layout(VkDevice device, VkCommandPool com
 	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.image = image;
-	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.aspectMask = aspectMask;
 	barrier.subresourceRange.baseMipLevel = 0;
 	barrier.subresourceRange.levelCount = mipLevels;
 	barrier.subresourceRange.baseArrayLayer = 0;
-	barrier.subresourceRange.layerCount = 1;
+	barrier.subresourceRange.layerCount = layers;
 
 	VkPipelineStageFlags sourceStage;
 	VkPipelineStageFlags destinationStage;
@@ -199,6 +199,18 @@ void ResourceManager::transition_image_layout(VkDevice device, VkCommandPool com
 
 		sourceStage = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
 		destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	} else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+		sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	} else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+		sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 	} else {
 		std::cerr << "Unsupported layout transition!" << std::endl;
 		abort();

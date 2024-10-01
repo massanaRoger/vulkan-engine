@@ -156,9 +156,9 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 			passType = MaterialPass::Transparent;
 		}
 
-		Shadow::ShadowResources shadowResources;
-		shadowResources.dataBuffer = file.materialDataBuffer.buffer;
-		shadowResources.dataBufferOffset = data_index * sizeof(Shadow::ShadowResources);
+		ShadowCube::ShadowResources shadowcubeResources;
+		shadowcubeResources.dataBuffer = file.materialDataBuffer.buffer;
+		shadowcubeResources.dataBufferOffset = data_index * sizeof(Shadow::ShadowResources);
 
 		GLTFMetallic_Roughness::MaterialResources materialResources;
 		// default the material textures
@@ -170,9 +170,9 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 		materialResources.normalSampler = renderer.defaultSamplerLinear;
 		materialResources.aoImage = renderer.whiteImage;
 		materialResources.aoSampler = renderer.defaultSamplerLinear;
-		materialResources.depthImage = renderer.shadow.depthImage;
-		materialResources.depthSampler = renderer.shadow.depthSampler;
-		materialResources.hasNormalMap = false;
+		materialResources.depthImage = renderer.shadowcube.cubeMap;
+		materialResources.depthSampler = renderer.shadowcube.cubemapSampler;
+		materialResources.hasNormalMap = 0;
 
 		// set the uniform buffer for the material data
 		materialResources.dataBuffer = file.materialDataBuffer.buffer;
@@ -201,7 +201,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 
 			materialResources.normalImage = images[img];
 			materialResources.normalSampler = file.samplers[sampler];
-			materialResources.hasNormalMap = true;
+			materialResources.hasNormalMap = 1;
 		}
 
 		if (mat.occlusionTexture.has_value()) {
@@ -213,9 +213,8 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 		}
 
 		newMat->data = renderer.metalRoughMaterial.write_material(renderer.device, passType, materialResources, file.descriptorPool);
-		newMat->shadow = renderer.shadow.write_material(renderer.device, shadowResources, file.descriptorPool);
-		
-
+		//newMat->shadow = renderer.shadowcube.write_material(renderer.device, shadowResources, file.descriptorPool);
+		newMat->shadowcube = renderer.shadowcube.write_material(renderer.device, shadowcubeResources, file.descriptorPool);
 
 		data_index++;
 	}
