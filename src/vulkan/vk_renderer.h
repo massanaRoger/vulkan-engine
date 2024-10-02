@@ -44,10 +44,8 @@ struct GPUMeshBuffers {
 };
 
 struct OffscreenSceneData {
-	glm::mat4 view;
-	glm::mat4 proj;
-	glm::mat4 model;
 	glm::vec4 lightPos;
+	float farPlane;
 };
 
 struct GPUSceneData {
@@ -61,6 +59,8 @@ struct GPUSceneData {
 	glm::vec4 camPos;
 	glm::vec4 lightPos[4];
 	glm::vec4 lightColors[4];
+	uint32_t hasNormalMap;
+	float farPlane;
 };
 
 struct MeshAsset {

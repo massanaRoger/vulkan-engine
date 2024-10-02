@@ -3,11 +3,16 @@
 layout (location = 0) out float outFragColor;
 
 layout (location = 0) in vec4 inPos;
-layout (location = 1) in vec3 inLightPos;
+
+layout(set = 0, binding = 0) uniform SceneData {   
+	vec4 lightPos;
+	float farPlane;
+} sceneData;
 
 void main() 
 {
-	// Store distance to light as 32 bit float value
-    vec3 lightVec = inPos.xyz - inLightPos;
-    outFragColor = length(lightVec);
+	float lightDistance = length(inPos.xyz - sceneData.lightPos.xyz);
+	lightDistance = lightDistance / sceneData.farPlane;
+
+	outFragColor = lightDistance;
 }

@@ -10,7 +10,6 @@ layout (location = 1) out vec3 outColor;
 layout (location = 2) out vec3 outWorldPos;
 layout (location = 3) out vec2 outUV;
 layout (location = 4) out vec3 outFragPos;
-layout (location = 5) out vec3 outLightPos;
 
 struct Vertex {
 	vec3 position;
@@ -46,5 +45,4 @@ void main()
 	outUV.x = v.uv_x;
 	outUV.y = v.uv_y;
 	outFragPos = vec3(PushConstants.renderMatrix * position);
-	outLightPos = normalize(sceneData.lightPos[0].xyz - v.position.xyz);
 }

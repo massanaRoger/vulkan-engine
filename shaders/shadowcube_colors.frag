@@ -9,12 +9,8 @@ layout (location = 1) in vec3 inColor;
 layout (location = 2) in vec3 inWorldPos;
 layout (location = 3) in vec2 inUV;
 layout (location = 4) in vec3 inFragPos;
-layout (location = 5) in vec3 inLightPos;
 
 layout (location = 0) out vec4 outFragColor;
-
-#define EPSILON 0.15
-#define SHADOW_OPACITY 0.5
 
 const float PI = 3.14159265359;
   
@@ -27,7 +23,7 @@ float ShadowCalculation(vec4 fragPosLightSpace);
 
 vec3 getNormalFromMap()
 {
-    if (sceneData.hasNormalMap) {
+    if (sceneData.hasNormalMap == 1) {
 	vec3 tangentNormal = texture(normalTex, inUV).xyz * 2.0 - 1.0;
 
 	vec3 Q1  = dFdx(inWorldPos);
@@ -45,6 +41,18 @@ vec3 getNormalFromMap()
 	return normalize(inNormal);  // If no normal map, just use vertex normal
     }
 }
+
+float ShadowCalculation(vec3 fragPos)
+{
+    vec3 fragToLight = inFragPos - sceneData.lightPos[0].xyz;
+    float closestDepth = texture(shadowCubeMap, fragToLight).r;
+    closestDepth *= sceneData.farPlane;
+    float currentDepth = length(fragToLight);
+    float shadow = currentDepth > closestDepth ? 1.0 : 0.0;
+
+    return shadow;
+}
+
 
 void main() 
 {
@@ -91,10 +99,7 @@ void main()
 	}
 
 	// Shadow
-	vec3 lightVec = inWorldPos - inLightPos;
-	float sampledDist = texture(shadowCubeMap, lightVec).r;
-	float dist = length(lightVec);
-	float shadow = (dist <= sampledDist + EPSILON) ? 1.0 : SHADOW_OPACITY;
+	float shadow = ShadowCalculation(inFragPos);
 
 	vec3 ambient = vec3(0.03) * albedo * ao;
 	vec3 color = (ambient + (1.0 - shadow)) * Lo;

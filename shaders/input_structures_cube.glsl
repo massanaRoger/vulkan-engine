@@ -10,6 +10,7 @@ layout(set = 0, binding = 0) uniform SceneData {
 	vec4 lightPos[4];
 	vec4 lightColors[4];
 	int hasNormalMap;
+	float farPlane;
 } sceneData;
 
 layout(set = 1, binding = 0) uniform GLTFMaterialData{   

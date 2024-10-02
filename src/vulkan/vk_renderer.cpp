@@ -5,6 +5,7 @@
 #include "core/components.h"
 #include "core/scene.h"
 #include "glm/ext/matrix_float4x4.hpp"
+#include "glm/ext/vector_float4.hpp"
 #include "glm/geometric.hpp"
 #include "vk_types.h"
 #include "vk_utils.h"
@@ -1417,45 +1418,39 @@ void Renderer::update_cube_face(uint32_t faceIndex, VkCommandBuffer commandBuffe
 	renderPassBeginInfo.clearValueCount = 2;
 	renderPassBeginInfo.pClearValues = clearValues;
 
-	// Update view matrix via push constant
+	
+	float nearPlane = 1.0f;
 
-	glm::mat4 viewMatrix = glm::mat4(1.0f);
+	// Update view matrix via push constant
+        glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), 1.0f, nearPlane, m_offscreenData.farPlane);
+	glm::mat4 lightTransform = glm::mat4(1.0f);
+
+	glm::vec3 lightPos = m_offscreenData.lightPos;
+
 	switch (faceIndex)
 	{
 		case 0: // POSITIVE_X
-			viewMatrix = glm::rotate(viewMatrix, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-			viewMatrix = glm::rotate(viewMatrix, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+			lightTransform = shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f));
 		break;
 		case 1:	// NEGATIVE_X
-			viewMatrix = glm::rotate(viewMatrix, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-			viewMatrix = glm::rotate(viewMatrix, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+			lightTransform = shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f));
 		break;
 		case 2:	// POSITIVE_Y
-			viewMatrix = glm::rotate(viewMatrix, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+			lightTransform = shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 		break;
 		case 3:	// NEGATIVE_Y
-			viewMatrix = glm::rotate(viewMatrix, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+			lightTransform = shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f));
 		break;
 		case 4:	// POSITIVE_Z
-			viewMatrix = glm::rotate(viewMatrix, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+			lightTransform = shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f));
 		break;
 		case 5:	// NEGATIVE_Z
-			viewMatrix = glm::rotate(viewMatrix, glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+			lightTransform = shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f));
 		break;
 	}
 
 	// Render scene from cube face's point of view
 	vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-	// Update shader push constant block
-	// Contains current face view matrix
-	vkCmdPushConstants(
-		commandBuffer,
-		shadowcube.pipeline.layout,
-		VK_SHADER_STAGE_VERTEX_BIT,
-		0,
-		sizeof(PushConstants),
-	&viewMatrix);
 
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowcube.pipeline.pipeline);
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowcube.pipeline.layout, 0, 1, &descriptor, 0, NULL);
@@ -1466,7 +1461,7 @@ void Renderer::update_cube_face(uint32_t faceIndex, VkCommandBuffer commandBuffe
 		PushConstants pushConstants;
 		pushConstants.vertexBuffer = obj.vertexBufferAddress;
 		pushConstants.worldMatrix = obj.transform;
-		pushConstants.lightSpaceMatrix = viewMatrix;
+		pushConstants.lightSpaceMatrix = lightTransform;
 
 		vkCmdPushConstants(commandBuffer, shadowcube.pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
 
@@ -1622,6 +1617,8 @@ void Renderer::update_scene(const Camera& camera)
 	m_sceneData.sunlightColor = glm::vec4(1.f);
 	m_sceneData.sunlightDirection = glm::normalize(glm::vec4(1, 1, 0.5, 0.f));
 
+	float zFar = 25.0f;
+	m_sceneData.farPlane = zFar;
 
 	auto lightView = registry.view<TransformComponent, LightComponent>();
 	unsigned int i = 0;
@@ -1637,13 +1634,9 @@ void Renderer::update_scene(const Camera& camera)
 	// TODO: update to multiple lightpos in cubemap
 	glm::vec4 lightPos = m_sceneData.lightPos[0];
 
-	float zNear = 0.1f;
-	float zFar = 1024.0f;
 
-	m_offscreenData.proj = glm::perspective((float)(M_PI / 2.0), 1.0f, zNear, zFar);
-	m_offscreenData.view = glm::mat4(1.0f);
-	m_offscreenData.model = glm::translate(glm::mat4(1.0f), glm::vec3(-lightPos.x, -lightPos.y, -lightPos.z));
 	m_offscreenData.lightPos = lightPos;
+	m_offscreenData.farPlane = zFar;
 
 	auto end = std::chrono::system_clock::now();
 	auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);

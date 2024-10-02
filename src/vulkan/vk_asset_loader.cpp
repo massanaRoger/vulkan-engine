@@ -213,6 +213,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 		}
 
 		newMat->data = renderer.metalRoughMaterial.write_material(renderer.device, passType, materialResources, file.descriptorPool);
+		shadowcubeResources.dataBufferOffset = 64;
 		//newMat->shadow = renderer.shadowcube.write_material(renderer.device, shadowResources, file.descriptorPool);
 		newMat->shadowcube = renderer.shadowcube.write_material(renderer.device, shadowcubeResources, file.descriptorPool);
 
