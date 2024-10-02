@@ -123,7 +123,7 @@ void main()
 	float shadow = ShadowCalculation(inFragPos);
 
 	vec3 ambient = vec3(0.03) * albedo * ao;
-	vec3 color = (ambient + (1.0 - shadow)) * Lo;
+	vec3 color = ambient + (1.0 - shadow) * Lo;
 
 	color = color / (color + vec3(1.0));
 	color = pow(color, vec3(1.0/2.2));  
