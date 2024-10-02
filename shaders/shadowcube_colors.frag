@@ -4,6 +4,8 @@
 #extension GL_GOOGLE_include_directive : require
 #include "input_structures_cube.glsl"
 
+#define SAMPLE_COUNT 20
+
 layout (location = 0) in vec3 inNormal;
 layout (location = 1) in vec3 inColor;
 layout (location = 2) in vec3 inWorldPos;
@@ -42,13 +44,32 @@ vec3 getNormalFromMap()
     }
 }
 
+vec3 gridSamplingDisk[SAMPLE_COUNT] = vec3[]
+(
+   vec3( 1,  1,  1), vec3( 1, -1,  1), vec3(-1, -1,  1), vec3(-1,  1,  1), 
+   vec3( 1,  1, -1), vec3( 1, -1, -1), vec3(-1, -1, -1), vec3(-1,  1, -1),
+   vec3( 1,  1,  0), vec3( 1, -1,  0), vec3(-1, -1,  0), vec3(-1,  1,  0),
+   vec3( 1,  0,  1), vec3(-1,  0,  1), vec3( 1,  0, -1), vec3(-1,  0, -1),
+   vec3( 0,  1,  1), vec3( 0, -1,  1), vec3( 0, -1, -1), vec3( 0,  1, -1)
+);
+
 float ShadowCalculation(vec3 fragPos)
 {
     vec3 fragToLight = inFragPos - sceneData.lightPos[0].xyz;
-    float closestDepth = texture(shadowCubeMap, fragToLight).r;
-    closestDepth *= sceneData.farPlane;
     float currentDepth = length(fragToLight);
-    float shadow = currentDepth > closestDepth ? 1.0 : 0.0;
+
+    float shadow = 0.0;
+    int samples = 20;
+    float viewDistance = length(sceneData.camPos.xyz - fragPos);
+    float diskRadius = (1.0 + (viewDistance / sceneData.farPlane)) / 50.0;
+    for(int i = 0; i < SAMPLE_COUNT; ++i)
+    {
+        float closestDepth = texture(shadowCubeMap, fragToLight + gridSamplingDisk[i] * diskRadius).r;
+        closestDepth *= sceneData.farPlane;   // undo mapping [0;1]
+        if(currentDepth > closestDepth)
+            shadow += 1.0;
+    }
+    shadow /= float(samples);
 
     return shadow;
 }
