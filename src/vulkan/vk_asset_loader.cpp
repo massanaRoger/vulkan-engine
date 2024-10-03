@@ -1,6 +1,7 @@
 #include "vk_asset_loader.h"
 #include "fastgltf/parser.hpp"
 #include "fastgltf/tools.hpp"
+#include "fastgltf/types.hpp"
 #include "fastgltf/util.hpp"
 #include "vulkan/vk_types.h"
 #include <optional>
@@ -151,9 +152,12 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 		// write material parameters to buffer
 		sceneMaterialConstants[data_index] = constants;
 
+
 		MaterialPass passType = MaterialPass::MainColor;
 		if (mat.alphaMode == fastgltf::AlphaMode::Blend) {
 			passType = MaterialPass::Transparent;
+		} else if (mat.alphaMode == fastgltf::AlphaMode::Mask) {
+			newMat.get()->alphaCutoff = mat.alphaCutoff;
 		}
 
 		ShadowCube::ShadowResources shadowcubeResources;
@@ -185,6 +189,9 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 
 			materialResources.colorImage = images[img];
 			materialResources.colorSampler = file.samplers[sampler];
+
+			shadowcubeResources.colorImage = images[img];
+			shadowcubeResources.colorSampler = file.samplers[sampler];
 		}
 
 		if (mat.pbrData.metallicRoughnessTexture.has_value()) {

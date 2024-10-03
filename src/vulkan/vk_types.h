@@ -61,9 +61,12 @@ struct RenderObject {
 	VkBuffer indexBuffer;
 
 	MaterialInstance* material;
+	ShadowCubeInstance* shadowMaterial;
 
 	glm::mat4 transform;
 	VkDeviceAddress vertexBufferAddress;
+
+	float alphaCutoff;
 };
 
 struct AllocatedImage {
@@ -84,6 +87,7 @@ struct PushConstants {
 	glm::mat4 worldMatrix;
 	glm::mat4 lightSpaceMatrix;
 	VkDeviceAddress vertexBuffer;
+	float alphaCutoff;
 };
 
 struct DrawContext;

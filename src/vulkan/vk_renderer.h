@@ -29,6 +29,7 @@ struct GLTFMaterial {
 	MaterialInstance data;
 	ShadowInstance shadow;
 	ShadowCubeInstance shadowcube;
+	float alphaCutoff;
 };
 struct GeoSurface {
 	uint32_t startIndex;
@@ -93,6 +94,8 @@ public:
 	VkImageView faceImageViews[6];
 
 	struct ShadowResources {
+		AllocatedImage colorImage;
+		VkSampler colorSampler;
 		VkBuffer dataBuffer;
 		uint32_t dataBufferOffset;
 	};

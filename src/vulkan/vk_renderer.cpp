@@ -1371,6 +1371,7 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 		pushConstants.vertexBuffer = r.vertexBufferAddress;
 		pushConstants.worldMatrix = r.transform;
 		pushConstants.lightSpaceMatrix = lightProjection * lightViewMatrix;
+		pushConstants.alphaCutoff = r.alphaCutoff;
 		vkCmdPushConstants(commandBuffer, r.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
 
 		vkCmdDrawIndexed(commandBuffer, r.indexCount, 1, r.firstIndex, 0, 0);
@@ -1455,13 +1456,21 @@ void Renderer::update_cube_face(uint32_t faceIndex, VkCommandBuffer commandBuffe
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowcube.pipeline.pipeline);
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowcube.pipeline.layout, 0, 1, &descriptor, 0, NULL);
 
+	MaterialInstance* lastMaterial = nullptr;
+
 	for (const RenderObject& obj : m_mainDrawContext.opaqueSurfaces) {
 		vkCmdBindIndexBuffer(commandBuffer, obj.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+		if (obj.material != lastMaterial) {
+			lastMaterial = obj.material;
+			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowcube.pipeline.layout, 1, 1, &obj.shadowMaterial->materialSet, 0, nullptr);
+		}
 
 		PushConstants pushConstants;
 		pushConstants.vertexBuffer = obj.vertexBufferAddress;
 		pushConstants.worldMatrix = obj.transform;
 		pushConstants.lightSpaceMatrix = lightTransform;
+		pushConstants.alphaCutoff = obj.alphaCutoff;
 
 		vkCmdPushConstants(commandBuffer, shadowcube.pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
 
@@ -1676,7 +1685,14 @@ void ShadowCube::build_pipelines(Renderer& renderer)
 	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 	uboLayoutBinding.pImmutableSamplers = nullptr;
 
-	std::array<VkDescriptorSetLayoutBinding, 1> bindings = { uboLayoutBinding };
+	VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+	samplerLayoutBinding.binding = 1;
+	samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	samplerLayoutBinding.descriptorCount = 1;
+	samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	samplerLayoutBinding.pImmutableSamplers = nullptr;
+
+	std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerLayoutBinding };
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -1829,6 +1845,7 @@ ShadowCubeInstance ShadowCube::write_material(VkDevice device, const ShadowResou
 
 	writer.clear();
 	writer.write_buffer(0, resources.dataBuffer, sizeof(ShadowConstants), resources.dataBufferOffset, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	writer.write_image(1, resources.colorImage.imageView, resources.colorSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
 	writer.update_set(device, matData.materialSet);
 
@@ -2278,13 +2295,13 @@ void MeshNode::draw(const glm::mat4& topMatrix, DrawContext &ctx)
 		def.firstIndex = s.startIndex;
 		def.indexBuffer = mesh->meshBuffers.indexBuffer.buffer;
 		def.material = &s.material->data;
+		def.shadowMaterial = &s.material->shadowcube;
+
+		def.alphaCutoff = s.material->alphaCutoff;
 
 		def.transform = nodeMatrix;
 		def.vertexBufferAddress = mesh->meshBuffers.vertexBufferAddress;
 
-		def.transform = nodeMatrix;
-		def.vertexBufferAddress = mesh->meshBuffers.vertexBufferAddress;
-		
 		if (s.material->data.passType == MaterialPass::Transparent) {
 			ctx.transparentSurfaces.push_back(def);
 		} else {

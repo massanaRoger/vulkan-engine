@@ -10,6 +10,7 @@ layout (location = 1) out vec3 outColor;
 layout (location = 2) out vec3 outWorldPos;
 layout (location = 3) out vec2 outUV;
 layout (location = 4) out vec3 outFragPos;
+layout (location = 5) out float outAlphaCutoff;
 
 struct Vertex {
 	vec3 position;
@@ -29,6 +30,7 @@ layout( push_constant ) uniform constants
 	mat4 renderMatrix;
 	mat4 lightSpaceMatrix;
 	VertexBuffer vertexBuffer;
+	float alphaCutoff;
 } PushConstants;
 
 void main() 
@@ -45,4 +47,5 @@ void main()
 	outUV.x = v.uv_x;
 	outUV.y = v.uv_y;
 	outFragPos = vec3(PushConstants.renderMatrix * position);
+	outAlphaCutoff = PushConstants.alphaCutoff;
 }

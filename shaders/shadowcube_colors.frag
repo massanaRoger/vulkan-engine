@@ -11,6 +11,7 @@ layout (location = 1) in vec3 inColor;
 layout (location = 2) in vec3 inWorldPos;
 layout (location = 3) in vec2 inUV;
 layout (location = 4) in vec3 inFragPos;
+layout (location = 5) in float inAlphaCutoff;
 
 layout (location = 0) out vec4 outFragColor;
 
@@ -77,6 +78,10 @@ float ShadowCalculation(vec3 fragPos)
 
 void main() 
 {
+	float alpha = texture(colorTex, inUV).a;
+	if (alpha < inAlphaCutoff) {
+	    discard;
+	}
 	vec3 albedo     = pow(texture(colorTex, inUV).rgb, vec3(2.2));
 	float metallic  = texture(metalRoughTex, inUV).b;
 	float roughness = texture(metalRoughTex, inUV).g;
