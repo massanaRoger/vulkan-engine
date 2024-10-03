@@ -68,8 +68,12 @@ void Application::run()
 
 		ImGui::NewFrame();
 
-		ImGui::Begin("Stats");
+		ImGui::Begin("Controls");
 
+		ImGui::Text("F1: Toggle cursor");
+		ImGui::Text("ESC: Exit");
+
+		ImGui::Text("Stats");
 		ImGui::Text("frametime %f ms", m_renderer.stats.frameTime);
 		ImGui::Text("draw time %f ms", m_renderer.stats.meshDrawTime);
 		ImGui::Text("update time %f ms", m_renderer.stats.sceneUpdateTime);
