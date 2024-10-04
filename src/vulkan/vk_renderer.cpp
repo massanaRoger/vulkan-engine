@@ -261,13 +261,10 @@ void Renderer::cleanup()
 	vkDestroySampler(device, m_defaultSamplerNearest, nullptr);
 
 	metalRoughMaterial.clear_resources(device);
+	shadowcube.clear_resources(device);
 
 	vkDestroyRenderPass(device, renderPass, nullptr);
-
-	/*for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-		vmaUnmapMemory(resourceManager.get_allocator(), m_uniformBuffersMemory[i]);
-		vmaDestroyBuffer(resourceManager.get_allocator(), m_uniformBuffers[i], m_uniformBuffersMemory[i]);
-	}*/
+	vkDestroyRenderPass(device, shadowcube.renderPass, nullptr);
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 		m_descriptors[i].destroy_pools(device);
@@ -276,9 +273,14 @@ void Renderer::cleanup()
 
 	resourceManager.destroy_buffer(m_gpuSceneDataBuffer);
 	resourceManager.destroy_buffer(m_materialConstants);
+	resourceManager.destroy_buffer(m_offscrenSceneDataBuffer);
 
 	vkDestroyDescriptorSetLayout(device, m_gpuSceneDataDescriptorLayout, nullptr);
 	vkDestroyDescriptorSetLayout(device, m_materialDescriptorLayout, nullptr);
+	vkDestroyDescriptorSetLayout(device, m_offscreenSceneDataDescriptorLayout, nullptr);
+
+	resourceManager.destroy_image(device, shadowcube.cubeMap);
+	resourceManager.destroy_image(device, shadowcube.depthImage);
 
 	vmaDestroyAllocator(resourceManager.get_allocator());
 
@@ -287,6 +289,7 @@ void Renderer::cleanup()
 		vkDestroySemaphore(device, m_imageAvailableSemaphores[i], nullptr);
 		vkDestroyFence(device, m_inFlightFences[i], nullptr);
 	}
+
 
 	vkDestroyCommandPool(device, m_transferCommandPool, nullptr);
 	vkDestroyCommandPool(device, m_graphicsCommandPool, nullptr);
@@ -1834,6 +1837,15 @@ void ShadowCube::clear_resources(VkDevice device)
 	vkDestroyPipelineLayout(device, pipeline.layout, nullptr);
 
 	vkDestroyDescriptorSetLayout(device, shadowLayout, nullptr);
+
+	for (size_t i = 0; i < 6; i++) {
+		vkDestroyImageView(device, faceImageViews[i], nullptr);
+		vkDestroyFramebuffer(device, framebuffers[i], nullptr);
+	}
+
+	vkDestroySampler(device, depthSampler, nullptr);
+	vkDestroySampler(device, cubemapSampler, nullptr);
+
 }
 
 ShadowCubeInstance ShadowCube::write_material(VkDevice device, const ShadowResources& resources, DescriptorAllocatorGrowable& descriptorAllocator)
