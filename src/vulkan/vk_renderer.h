@@ -6,6 +6,7 @@
 #include "imgui.h"
 #include "vulkan/vk_asset_loader.h"
 #include "vulkan/vk_descriptors.h"
+#include "vulkan/vk_pipeline_manager.h"
 #include "vulkan/vk_resource_manager.h"
 #include "vulkan/vk_swapchain_manager.h"
 #include "vulkan/vk_types.h"
@@ -28,7 +29,7 @@ const int MAX_FRAMES_IN_FLIGHT=2;
 struct GLTFMaterial {
 	MaterialInstance data;
 	ShadowInstance shadow;
-	ShadowCubeInstance shadowcube;
+	ShadowInstance shadowcube;
 	float alphaCutoff;
 };
 struct GeoSurface {
@@ -80,7 +81,7 @@ struct Vertex {
 
 class ShadowCube {
 public:
-	MaterialPipeline pipeline;
+	std::string pipelineName;
 	VkDescriptorSetLayout shadowLayout;
 	VkRenderPass renderPass;
 	DescriptorWriter writer;
@@ -110,12 +111,12 @@ public:
 	void build_pipelines(Renderer& renderer);
 	void clear_resources(VkDevice device);
 
-	ShadowCubeInstance write_material(VkDevice device, const ShadowResources& resources, DescriptorAllocatorGrowable& descriptorAllocator);
+	ShadowInstance write_material(VkDevice device, const ShadowResources& resources, DescriptorAllocatorGrowable& descriptorAllocator);
 };
 
 class Shadow {
 public:
-	MaterialPipeline pipeline;
+	std::string pipelineName;
 	VkDescriptorSetLayout shadowLayout;
 	VkRenderPass renderPass;
 	DescriptorWriter writer;
@@ -143,8 +144,8 @@ public:
 
 class GLTFMetallic_Roughness {
 public:
-	MaterialPipeline opaquePipeline;
-	MaterialPipeline transparentPipeline;
+	std::string opaquePipelineName;
+	std::string transparentPipelineName;
 
 	VkDescriptorSetLayout materialLayout;
 
@@ -203,6 +204,7 @@ class Renderer {
 public:
 	SwapchainManager swapchainManager;
 	ResourceManager resourceManager;
+	PipelineManager pipelineManager;
 
 	const uint32_t shadowMapize{ 2048 };
 	Scene* scene;
@@ -243,7 +245,6 @@ private:
 
 	Renderer() = default;
 
-
 	SDL_Window* m_window;
 	VkInstance m_instance;
 	VkDebugUtilsMessengerEXT m_debugMessenger;
@@ -272,7 +273,6 @@ private:
 	uint32_t m_mipLevels;
 
 	MaterialInstance m_defaultData;
-
 
 	AllocatedBuffer m_gpuSceneDataBuffer;
 	AllocatedBuffer m_offscrenSceneDataBuffer;

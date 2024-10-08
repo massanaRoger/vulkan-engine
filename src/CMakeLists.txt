@@ -22,6 +22,8 @@ add_executable (engine
   vulkan/vk_swapchain_manager.cpp
   vulkan/vk_resource_manager.h
   vulkan/vk_resource_manager.cpp
+  vulkan/vk_pipeline_manager.h
+  vulkan/vk_pipeline_manager.cpp
   main.cpp
 )
 

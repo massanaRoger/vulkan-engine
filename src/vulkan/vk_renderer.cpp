@@ -13,8 +13,10 @@
 #include "imgui.h"
 #include "imgui_impl_vulkan.h"
 #include "imgui_impl_sdl2.h"
+#include "vulkan/vk_pipeline_manager.h"
 #include "vulkan/vk_swapchain_manager.h"
 #include <array>
+#include <memory>
 #include <unordered_map>
 #include <vulkan/vulkan_core.h>
 
@@ -55,6 +57,7 @@ void Renderer::init_vulkan(SDL_Window* window, Scene* sc)
 	create_logical_device();
 	resourceManager.create_allocator(device, m_physicalDevice, m_instance);
 	swapchainManager.create_swapchain(device, m_surface, m_physicalDevice, find_queue_families(m_physicalDevice), m_window);
+	pipelineManager.create(device);
 	create_image_views();
 	// create_shadow_render_pass();
 	create_shadowcube_render_pass();
@@ -262,6 +265,8 @@ void Renderer::cleanup()
 
 	metalRoughMaterial.clear_resources(device);
 	shadowcube.clear_resources(device);
+
+	pipelineManager.destroy();
 
 	vkDestroyRenderPass(device, renderPass, nullptr);
 	vkDestroyRenderPass(device, shadowcube.renderPass, nullptr);
@@ -1322,8 +1327,7 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 
 	vkCmdBeginRenderPass2(commandBuffer, &renderPassInfo, &subpassBeginInfo);
 
-	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_defaultData.pipeline->pipeline);
-
+	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_defaultData.pipeline.pipeline);
 
 	MaterialPipeline* lastPipeline = nullptr;
 	MaterialInstance* lastMaterial = nullptr;
@@ -1334,10 +1338,10 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 		if (r.material != lastMaterial) {
 			lastMaterial = r.material;
 			//rebind pipeline and descriptors if the material changed
-			if (r.material->pipeline != lastPipeline) {
-				lastPipeline = r.material->pipeline;
-				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->pipeline);
-				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr );
+			if (&r.material->pipeline != lastPipeline) {
+				lastPipeline = &r.material->pipeline;
+				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline.pipeline);
+				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline.layout, 0, 1, &globalDescriptor, 0, nullptr );
 
 				VkViewport viewport = {};
 				viewport.x = 0;
@@ -1357,7 +1361,7 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 
 				vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 			}
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 1, 1, &r.material->materialSet, 0, nullptr);
+			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline.layout, 1, 1, &r.material->materialSet, 0, nullptr);
 		}
 
 		//rebind index buffer if needed
@@ -1375,7 +1379,8 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 		pushConstants.worldMatrix = r.transform;
 		pushConstants.lightSpaceMatrix = lightProjection * lightViewMatrix;
 		pushConstants.alphaCutoff = r.alphaCutoff;
-		vkCmdPushConstants(commandBuffer, r.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
+
+		vkCmdPushConstants(commandBuffer, r.material->pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
 
 		vkCmdDrawIndexed(commandBuffer, r.indexCount, 1, r.firstIndex, 0, 0);
 
@@ -1456,8 +1461,9 @@ void Renderer::update_cube_face(uint32_t faceIndex, VkCommandBuffer commandBuffe
 	// Render scene from cube face's point of view
 	vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowcube.pipeline.pipeline);
-	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowcube.pipeline.layout, 0, 1, &descriptor, 0, NULL);
+	auto pipeline = pipelineManager.get_pipeline(shadowcube.pipelineName);
+	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);
+	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout, 0, 1, &descriptor, 0, NULL);
 
 	MaterialInstance* lastMaterial = nullptr;
 
@@ -1466,7 +1472,7 @@ void Renderer::update_cube_face(uint32_t faceIndex, VkCommandBuffer commandBuffe
 
 		if (obj.material != lastMaterial) {
 			lastMaterial = obj.material;
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowcube.pipeline.layout, 1, 1, &obj.shadowMaterial->materialSet, 0, nullptr);
+			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout, 1, 1, &obj.shadowMaterial->materialSet, 0, nullptr);
 		}
 
 		PushConstants pushConstants;
@@ -1475,7 +1481,7 @@ void Renderer::update_cube_face(uint32_t faceIndex, VkCommandBuffer commandBuffe
 		pushConstants.lightSpaceMatrix = lightTransform;
 		pushConstants.alphaCutoff = obj.alphaCutoff;
 
-		vkCmdPushConstants(commandBuffer, shadowcube.pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
+		vkCmdPushConstants(commandBuffer, pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
 
 		vkCmdDrawIndexed(commandBuffer, obj.indexCount, 1, obj.firstIndex,0,0);
 	}
@@ -1715,28 +1721,6 @@ void ShadowCube::build_pipelines(Renderer& renderer)
 	VkPipelineLayout newShadowcubePipeline;
 	VK_CHECK(vkCreatePipelineLayout(renderer.device, &meshLayoutInfo, nullptr, &newShadowcubePipeline));
 
-	VkViewport viewport{};
-	viewport.x = 0.0f;
-	viewport.y = 0.0f;
-	viewport.width = (float) renderer.shadowMapize;
-	viewport.height = (float) renderer.shadowMapize;
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
-
-	VkRect2D scissor{};
-	scissor.offset = { 0, 0 };
-	scissor.extent.width = renderer.shadowMapize;
-	scissor.extent.height = renderer.shadowMapize;
-
-	VkPipelineViewportStateCreateInfo viewportState{};
-	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-	viewportState.viewportCount = 1;
-	viewportState.pViewports = &viewport;
-	viewportState.scissorCount = 1;
-	viewportState.pScissors = &scissor;
-
-	pipeline.layout = newShadowcubePipeline;
-
 	VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
 	vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -1751,81 +1735,28 @@ void ShadowCube::build_pipelines(Renderer& renderer)
 
 	VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
-	std::vector<VkDynamicState> dynamicStates = {
-		VK_DYNAMIC_STATE_VIEWPORT,
-		VK_DYNAMIC_STATE_SCISSOR
-	};
+	PipelineContext ctx = {};
+	ctx.layout = newShadowcubePipeline;
+	ctx.renderPass = renderPass;
 
-	VkPipelineDynamicStateCreateInfo dynamicState{};
-	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-	dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-	dynamicState.pDynamicStates = dynamicStates.data();
+	ctx.vpWidth = renderer.shadowMapize;
+	ctx.vpHeight = renderer.shadowMapize;
+	ctx.scissorExtent.width = renderer.shadowMapize;
+	ctx.scissorExtent.height = renderer.shadowMapize;
 
-	VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-	inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-	inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	inputAssembly.primitiveRestartEnable = VK_FALSE;
+	ctx.cullMode = VK_CULL_MODE_BACK_BIT;
+	ctx.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
-	VkPipelineRasterizationStateCreateInfo rasterizer{};
-	rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-	rasterizer.depthClampEnable = VK_FALSE;
-	rasterizer.rasterizerDiscardEnable = VK_FALSE;
-	rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-	rasterizer.lineWidth = 1.0f;
-	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-	rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-	rasterizer.depthBiasEnable = VK_FALSE;
-	rasterizer.depthBiasConstantFactor = 0.0f;
-	rasterizer.depthBiasClamp = 0.0f;
-	rasterizer.depthBiasSlopeFactor = 0.0f;
+	ctx.samples = VK_SAMPLE_COUNT_1_BIT;
 
-	VkPipelineMultisampleStateCreateInfo multisampling{};
-	multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-	multisampling.sampleShadingEnable = VK_FALSE;
-	multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	ctx.depthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
 
-	VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	colorBlendAttachment.blendEnable = VK_FALSE;
+	ctx.shaderStages = shaderStages;
+	ctx.numShaders = 2;
 
-	VkPipelineColorBlendStateCreateInfo colorBlending = {};
-	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-	colorBlending.pNext = nullptr;
-	colorBlending.logicOpEnable = VK_FALSE;
-	colorBlending.logicOp = VK_LOGIC_OP_COPY;
-	colorBlending.attachmentCount = 1;
-	colorBlending.pAttachments = &colorBlendAttachment;
+	pipelineName = "ShadowcubePipeline";
 
-	VkPipelineDepthStencilStateCreateInfo depthStencil{};
-	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	depthStencil.depthTestEnable = VK_TRUE;
-	depthStencil.depthWriteEnable = VK_TRUE;
-	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-	depthStencil.depthBoundsTestEnable = VK_FALSE;
-	depthStencil.stencilTestEnable = VK_FALSE;
-	depthStencil.front = {};
-	depthStencil.back = {};
-	depthStencil.minDepthBounds = 0.f;
-	depthStencil.maxDepthBounds = 1.f;
-
-	VkPipelineVertexInputStateCreateInfo vertexInputInfo = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
-
-	VkGraphicsPipelineCreateInfo pipelineInfo{};
-	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipelineInfo.stageCount = 2;
-	pipelineInfo.pStages = shaderStages;
-	pipelineInfo.pVertexInputState = &vertexInputInfo;
-	pipelineInfo.pInputAssemblyState = &inputAssembly;
-	pipelineInfo.pViewportState = &viewportState;
-	pipelineInfo.pRasterizationState = &rasterizer;
-	pipelineInfo.pMultisampleState = &multisampling;
-	pipelineInfo.pDepthStencilState = &depthStencil;
-	pipelineInfo.pColorBlendState = &colorBlending;
-	pipelineInfo.pDynamicState = &dynamicState;
-	pipelineInfo.renderPass = renderPass;
-	pipelineInfo.layout = newShadowcubePipeline;
-
-	VK_CHECK(vkCreateGraphicsPipelines(renderer.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline.pipeline));
+	renderer.pipelineManager.create_pipeline(pipelineName, ctx);
 
 	vkDestroyShaderModule(renderer.device, shadowFragShader , nullptr);
 	vkDestroyShaderModule(renderer.device, shadowVertexShader, nullptr);
@@ -1833,8 +1764,9 @@ void ShadowCube::build_pipelines(Renderer& renderer)
 
 void ShadowCube::clear_resources(VkDevice device)
 {
-	vkDestroyPipeline(device, pipeline.pipeline, nullptr);
-	vkDestroyPipelineLayout(device, pipeline.layout, nullptr);
+	Renderer& renderer = Renderer::getInstance();
+
+	renderer.pipelineManager.destroy_pipeline(pipelineName);
 
 	vkDestroyDescriptorSetLayout(device, shadowLayout, nullptr);
 
@@ -1848,11 +1780,12 @@ void ShadowCube::clear_resources(VkDevice device)
 
 }
 
-ShadowCubeInstance ShadowCube::write_material(VkDevice device, const ShadowResources& resources, DescriptorAllocatorGrowable& descriptorAllocator)
+ShadowInstance ShadowCube::write_material(VkDevice device, const ShadowResources& resources, DescriptorAllocatorGrowable& descriptorAllocator)
 {
+	Renderer& renderer = Renderer::getInstance();
 
-	ShadowCubeInstance matData;
-	matData.pipeline = &pipeline;
+	ShadowInstance matData;
+	matData.pipeline = renderer.pipelineManager.get_pipeline(pipelineName);
 	matData.materialSet = descriptorAllocator.allocate(device, shadowLayout);
 
 	writer.clear();
@@ -1904,28 +1837,6 @@ void Shadow::build_pipelines(Renderer& renderer)
 	VkPipelineLayout newShadowPipeline;
 	VK_CHECK(vkCreatePipelineLayout(renderer.device, &meshLayoutInfo, nullptr, &newShadowPipeline));
 
-	VkViewport viewport{};
-	viewport.x = 0.0f;
-	viewport.y = 0.0f;
-	viewport.width = (float) renderer.shadowMapize;
-	viewport.height = (float) renderer.shadowMapize;
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
-
-	VkRect2D scissor{};
-	scissor.offset = { 0, 0 };
-	scissor.extent.width = renderer.shadowMapize;
-	scissor.extent.height = renderer.shadowMapize;
-
-	VkPipelineViewportStateCreateInfo viewportState{};
-	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-	viewportState.viewportCount = 1;
-	viewportState.pViewports = &viewport;
-	viewportState.scissorCount = 1;
-	viewportState.pScissors = &scissor;
-
-	pipeline.layout = newShadowPipeline;
-
 	VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
 	vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -1940,81 +1851,28 @@ void Shadow::build_pipelines(Renderer& renderer)
 
 	VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
-	std::vector<VkDynamicState> dynamicStates = {
-		VK_DYNAMIC_STATE_VIEWPORT,
-		VK_DYNAMIC_STATE_SCISSOR
-	};
+	PipelineContext ctx = {};
+	ctx.layout = newShadowPipeline;
+	ctx.renderPass = renderPass;
 
-	VkPipelineDynamicStateCreateInfo dynamicState{};
-	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-	dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-	dynamicState.pDynamicStates = dynamicStates.data();
+	ctx.vpWidth = renderer.shadowMapize;
+	ctx.vpHeight = renderer.shadowMapize;
+	ctx.scissorExtent.width = renderer.shadowMapize;
+	ctx.scissorExtent.height = renderer.shadowMapize;
 
-	VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-	inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-	inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	inputAssembly.primitiveRestartEnable = VK_FALSE;
+	ctx.cullMode = VK_CULL_MODE_BACK_BIT;
+	ctx.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
-	VkPipelineRasterizationStateCreateInfo rasterizer{};
-	rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-	rasterizer.depthClampEnable = VK_FALSE;
-	rasterizer.rasterizerDiscardEnable = VK_FALSE;
-	rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-	rasterizer.lineWidth = 1.0f;
-	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-	rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-	rasterizer.depthBiasEnable = VK_FALSE;
-	rasterizer.depthBiasConstantFactor = 0.0f;
-	rasterizer.depthBiasClamp = 0.0f;
-	rasterizer.depthBiasSlopeFactor = 0.0f;
+	ctx.samples = VK_SAMPLE_COUNT_1_BIT;
 
-	VkPipelineMultisampleStateCreateInfo multisampling{};
-	multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-	multisampling.sampleShadingEnable = VK_FALSE;
-	multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	ctx.depthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
 
-	VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	colorBlendAttachment.blendEnable = VK_FALSE;
+	ctx.shaderStages = shaderStages;
+	ctx.numShaders = 2;
 
-	VkPipelineColorBlendStateCreateInfo colorBlending = {};
-	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-	colorBlending.pNext = nullptr;
-	colorBlending.logicOpEnable = VK_FALSE;
-	colorBlending.logicOp = VK_LOGIC_OP_COPY;
-	colorBlending.attachmentCount = 1;
-	colorBlending.pAttachments = &colorBlendAttachment;
+	pipelineName = "ShadowPipeline";
 
-	VkPipelineDepthStencilStateCreateInfo depthStencil{};
-	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	depthStencil.depthTestEnable = VK_TRUE;
-	depthStencil.depthWriteEnable = VK_TRUE;
-	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-	depthStencil.depthBoundsTestEnable = VK_FALSE;
-	depthStencil.stencilTestEnable = VK_FALSE;
-	depthStencil.front = {};
-	depthStencil.back = {};
-	depthStencil.minDepthBounds = 0.f;
-	depthStencil.maxDepthBounds = 1.f;
-
-	VkPipelineVertexInputStateCreateInfo vertexInputInfo = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
-
-	VkGraphicsPipelineCreateInfo pipelineInfo{};
-	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipelineInfo.stageCount = 2;
-	pipelineInfo.pStages = shaderStages;
-	pipelineInfo.pVertexInputState = &vertexInputInfo;
-	pipelineInfo.pInputAssemblyState = &inputAssembly;
-	pipelineInfo.pViewportState = &viewportState;
-	pipelineInfo.pRasterizationState = &rasterizer;
-	pipelineInfo.pMultisampleState = &multisampling;
-	pipelineInfo.pDepthStencilState = &depthStencil;
-	pipelineInfo.pColorBlendState = &colorBlending;
-	pipelineInfo.pDynamicState = &dynamicState;
-	pipelineInfo.renderPass = renderPass;
-	pipelineInfo.layout = newShadowPipeline;
-
-	VK_CHECK(vkCreateGraphicsPipelines(renderer.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline.pipeline));
+	renderer.pipelineManager.create_pipeline(pipelineName, ctx);
 
 	vkDestroyShaderModule(renderer.device, shadowFragShader , nullptr);
 	vkDestroyShaderModule(renderer.device, shadowVertexShader, nullptr);
@@ -2022,17 +1880,18 @@ void Shadow::build_pipelines(Renderer& renderer)
 
 void Shadow::clear_resources(VkDevice device)
 {
-	vkDestroyPipeline(device, pipeline.pipeline, nullptr);
-	vkDestroyPipelineLayout(device, pipeline.layout, nullptr);
+	Renderer& renderer = Renderer::getInstance();
+	renderer.pipelineManager.destroy_pipeline(pipelineName);
 
 	vkDestroyDescriptorSetLayout(device, shadowLayout, nullptr);
 }
 
 ShadowInstance Shadow::write_material(VkDevice device, const ShadowResources& resources, DescriptorAllocatorGrowable& descriptorAllocator)
 {
+	Renderer& renderer = Renderer::getInstance();
 
 	ShadowInstance matData;
-	matData.pipeline = &pipeline;
+	matData.pipeline = renderer.pipelineManager.get_pipeline(pipelineName);
 	matData.materialSet = descriptorAllocator.allocate(device, shadowLayout);
 
 	writer.clear();
@@ -2139,9 +1998,6 @@ void GLTFMetallic_Roughness::build_pipelines(Renderer& renderer)
 	viewportState.scissorCount = 1;
 	viewportState.pScissors = &scissor;
 
-	opaquePipeline.layout = newOpaqueLayout;
-	transparentPipeline.layout = newTransparentLayout;
-
 	VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
 	vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -2156,82 +2012,29 @@ void GLTFMetallic_Roughness::build_pipelines(Renderer& renderer)
 
 	VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
-	std::vector<VkDynamicState> dynamicStates = {
-		VK_DYNAMIC_STATE_VIEWPORT,
-		VK_DYNAMIC_STATE_SCISSOR
-	};
+	PipelineContext ctx = {};
+	ctx.layout = newOpaqueLayout;
+	ctx.renderPass = renderer.renderPass;
 
-	VkPipelineDynamicStateCreateInfo dynamicState{};
-	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-	dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-	dynamicState.pDynamicStates = dynamicStates.data();
+	ctx.vpWidth = renderer.swapchainManager.get_swapchain_extent().width;
+	ctx.vpHeight = renderer.swapchainManager.get_swapchain_extent().height;
+	ctx.scissorExtent = renderer.swapchainManager.get_swapchain_extent();
 
-	VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-	inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-	inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	inputAssembly.primitiveRestartEnable = VK_FALSE;
+	ctx.cullMode = VK_CULL_MODE_NONE;
+	ctx.frontFace = VK_FRONT_FACE_CLOCKWISE;
 
-	VkPipelineRasterizationStateCreateInfo rasterizer{};
-	rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-	rasterizer.depthClampEnable = VK_FALSE;
-	rasterizer.rasterizerDiscardEnable = VK_FALSE;
-	rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-	rasterizer.lineWidth = 1.0f;
-	rasterizer.cullMode = VK_CULL_MODE_NONE;
-	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
-	rasterizer.depthBiasEnable = VK_FALSE;
-	rasterizer.depthBiasConstantFactor = 0.0f;
-	rasterizer.depthBiasClamp = 0.0f;
-	rasterizer.depthBiasSlopeFactor = 0.0f;
+	ctx.samples = renderer.msaaSamples;
 
-	VkPipelineMultisampleStateCreateInfo multisampling{};
-	multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-	multisampling.sampleShadingEnable = VK_FALSE;
-	multisampling.rasterizationSamples = renderer.msaaSamples;
+	ctx.depthCompare = VK_COMPARE_OP_LESS;
+
+	ctx.shaderStages = shaderStages;
+	ctx.numShaders = 2;
+
+	opaquePipelineName = "OpaqueShadowPipeline";
+
+	renderer.pipelineManager.create_pipeline(opaquePipelineName, ctx);
 
 	VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	colorBlendAttachment.blendEnable = VK_FALSE;
-
-	VkPipelineColorBlendStateCreateInfo colorBlending = {};
-	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-	colorBlending.pNext = nullptr;
-	colorBlending.logicOpEnable = VK_FALSE;
-	colorBlending.logicOp = VK_LOGIC_OP_COPY;
-	colorBlending.attachmentCount = 1;
-	colorBlending.pAttachments = &colorBlendAttachment;
-
-	VkPipelineDepthStencilStateCreateInfo depthStencil{};
-	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	depthStencil.depthTestEnable = VK_TRUE;
-	depthStencil.depthWriteEnable = VK_TRUE;
-	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-	depthStencil.depthBoundsTestEnable = VK_FALSE;
-	depthStencil.stencilTestEnable = VK_FALSE;
-	depthStencil.front = {};
-	depthStencil.back = {};
-	depthStencil.minDepthBounds = 0.f;
-	depthStencil.maxDepthBounds = 1.f;
-
-	VkPipelineVertexInputStateCreateInfo vertexInputInfo = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
-
-	VkGraphicsPipelineCreateInfo pipelineInfo{};
-	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipelineInfo.stageCount = 2;
-	pipelineInfo.pStages = shaderStages;
-	pipelineInfo.pVertexInputState = &vertexInputInfo;
-	pipelineInfo.pInputAssemblyState = &inputAssembly;
-	pipelineInfo.pViewportState = &viewportState;
-	pipelineInfo.pRasterizationState = &rasterizer;
-	pipelineInfo.pMultisampleState = &multisampling;
-	pipelineInfo.pDepthStencilState = &depthStencil;
-	pipelineInfo.pColorBlendState = &colorBlending;
-	pipelineInfo.pDynamicState = &dynamicState;
-	pipelineInfo.renderPass = renderer.renderPass;
-	pipelineInfo.layout = newOpaqueLayout;
-
-	VK_CHECK(vkCreateGraphicsPipelines(renderer.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &opaquePipeline.pipeline));
-
 	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 	colorBlendAttachment.blendEnable = VK_TRUE;
 	colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
@@ -2241,19 +2044,13 @@ void GLTFMetallic_Roughness::build_pipelines(Renderer& renderer)
 	colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
 	colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
-	depthStencil.depthTestEnable = VK_TRUE;
-	depthStencil.depthWriteEnable =	VK_FALSE;
-	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-	depthStencil.depthBoundsTestEnable = VK_FALSE;
-	depthStencil.stencilTestEnable = VK_FALSE;
-	depthStencil.front = {};
-	depthStencil.back = {};
-	depthStencil.minDepthBounds = 0.f;
-	depthStencil.maxDepthBounds = 1.f;
+	ctx.layout = newTransparentLayout;
+	ctx.colorBlendAttachment = &colorBlendAttachment;
+	ctx.depthWriteEnable = VK_FALSE;
 
-	pipelineInfo.layout = newTransparentLayout;
+	transparentPipelineName = "TransparentPipeline";
 
-	VK_CHECK(vkCreateGraphicsPipelines(renderer.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &transparentPipeline.pipeline));
+	renderer.pipelineManager.create_pipeline(transparentPipelineName, ctx);
 
 	vkDestroyShaderModule(renderer.device, meshFragShader, nullptr);
 	vkDestroyShaderModule(renderer.device, meshVertexShader, nullptr);
@@ -2261,24 +2058,24 @@ void GLTFMetallic_Roughness::build_pipelines(Renderer& renderer)
 
 void GLTFMetallic_Roughness::clear_resources(VkDevice device)
 {
-	vkDestroyPipeline(device, opaquePipeline.pipeline, nullptr);
-	vkDestroyPipelineLayout(device, opaquePipeline.layout, nullptr);
-
-	vkDestroyPipeline(device, transparentPipeline.pipeline, nullptr);
-	vkDestroyPipelineLayout(device, transparentPipeline.layout, nullptr);
+	Renderer& renderer = Renderer::getInstance();
+	renderer.pipelineManager.destroy_pipeline(opaquePipelineName);
+	renderer.pipelineManager.destroy_pipeline(transparentPipelineName);
 
 	vkDestroyDescriptorSetLayout(device, materialLayout, nullptr);
 }
 
 MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, MaterialPass pass, const MaterialResources& resources, DescriptorAllocatorGrowable& descriptorAllocator)
 {
+	Renderer& renderer = Renderer::getInstance();
+
 	MaterialInstance matData;
 	matData.passType = pass;
 	if (pass == MaterialPass::Transparent) {
-		matData.pipeline = &transparentPipeline;
+		matData.pipeline = renderer.pipelineManager.get_pipeline(transparentPipelineName);
 	}
 	else {
-		matData.pipeline = &opaquePipeline;
+		matData.pipeline = renderer.pipelineManager.get_pipeline(opaquePipelineName);
 	}
 
 	matData.materialSet = descriptorAllocator.allocate(device, materialLayout);

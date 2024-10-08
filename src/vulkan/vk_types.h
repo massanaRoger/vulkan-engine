@@ -1,6 +1,8 @@
 #pragma once
 
+#include "vulkan/vk_pipeline_manager.h"
 #include <memory>
+#include <string>
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
@@ -34,24 +36,14 @@ enum class MaterialPass : uint8_t {
 	Other
 };
 
-struct MaterialPipeline {
-	VkPipeline pipeline;
-	VkPipelineLayout layout;
-};
-
 struct MaterialInstance {
-	MaterialPipeline* pipeline;
+	MaterialPipeline pipeline;
 	VkDescriptorSet materialSet;
 	MaterialPass passType;
 };
 
-struct ShadowCubeInstance {
-	MaterialPipeline* pipeline;
-	VkDescriptorSet materialSet;
-};
-
 struct ShadowInstance {
-	MaterialPipeline* pipeline;
+	MaterialPipeline pipeline;
 	VkDescriptorSet materialSet;
 };
 
@@ -61,7 +53,7 @@ struct RenderObject {
 	VkBuffer indexBuffer;
 
 	MaterialInstance* material;
-	ShadowCubeInstance* shadowMaterial;
+	ShadowInstance* shadowMaterial;
 
 	glm::mat4 transform;
 	VkDeviceAddress vertexBufferAddress;
