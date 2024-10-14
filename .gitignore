@@ -3,3 +3,4 @@ bin
 .cache
 build
 textures
+vkpkg
