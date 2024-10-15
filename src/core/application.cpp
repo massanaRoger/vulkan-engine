@@ -15,7 +15,7 @@
 
 namespace Engine {
 
-Application::Application(): m_renderer(Renderer::getInstance()), m_camera(), m_scene()
+Application::Application(): m_renderer(Renderer::getInstance())
 {}
 
 void Application::init()

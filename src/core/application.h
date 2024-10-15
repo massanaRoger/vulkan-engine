@@ -3,6 +3,7 @@
 #include "SDL_events.h"
 #include "SDL_video.h"
 #include "core/scene.h"
+#include "networking/client.h"
 #include "vulkan/vk_renderer.h"
 
 namespace Engine {
@@ -18,6 +19,7 @@ private:
 	Renderer& m_renderer;
 	Camera m_camera;
 	Scene m_scene;
+	Client m_client;
 	bool m_quit = false;
 	bool m_showImguiWindow = true;
 

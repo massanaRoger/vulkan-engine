@@ -22,11 +22,19 @@ target_include_directories(vkbootstrap PUBLIC vkbootstrap)
 target_link_libraries(vkbootstrap PUBLIC Vulkan::Vulkan $<$<BOOL:UNIX>:${CMAKE_DL_LIBS}>)
 set_property(TARGET vkbootstrap PROPERTY CXX_STANDARD 20)
 
-
 #both vma and glm and header only libs so we only need the include path
 target_include_directories(vma INTERFACE vma)
 
 target_include_directories(glm INTERFACE glm)
+
+add_library(GameNetworkingSockets INTERFACE)
+
+target_include_directories(GameNetworkingSockets INTERFACE GameNetworkingSockets/include)
+
+target_link_libraries(GameNetworkingSockets INTERFACE
+    $<$<CONFIG:Debug>:${CMAKE_CURRENT_SOURCE_DIR}/GameNetworkingSockets/bin/Windows/Debug/GameNetworkingSockets.lib>
+    $<$<CONFIG:Release>:${CMAKE_CURRENT_SOURCE_DIR}/GameNetworkingSockets/bin/Windows/Release/GameNetworkingSockets.lib>
+)
 
 #add_library(sdl2 INTERFACE)
 
