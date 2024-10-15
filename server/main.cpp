@@ -13,7 +13,6 @@ static HSteamNetPollGroup g_pollGroup;
 
 void OnSteamNetConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t *pInfo)
 {
-	std::cout << "MISOO" << std::endl;
 	if (pInfo->m_info.m_eState == k_ESteamNetworkingConnectionState_Connected) {
 		std::cout << "Client connected!" << std::endl;
 	} else if (pInfo->m_info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer || pInfo->m_info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally) {

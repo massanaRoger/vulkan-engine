@@ -24,9 +24,6 @@ void Client::on_steam_net_connection_status_changed(SteamNetConnectionStatusChan
 }
 
 Client::Error Client::init() {
-	// Ensure enough time for server to start
-	std::this_thread::sleep_for(std::chrono::seconds(1));
-
 	SteamDatagramErrMsg errMsg;
 	if (!GameNetworkingSockets_Init(nullptr, errMsg)) {
 		return Error(ErrorCode::NetworkingInitError, std::format("Failed to initialize networking: {}", errMsg));
