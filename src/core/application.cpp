@@ -12,6 +12,7 @@
 
 #include <chrono>
 #include <SDL.h>
+#include <iostream>
 
 namespace Engine {
 
@@ -34,10 +35,15 @@ void Application::init()
 	);
 	SDL_AddEventWatch(frame_buffer_callback, m_window);
 	m_renderer.init_vulkan(m_window, &m_scene);
+	auto error = m_client.init();
+	if (error.code != Client::ErrorCode::Success) {
+		std::cerr << error.message << std::endl;
+	}
 }
 
 void Application::run()
 {
+	m_client.run("127.0.0.1");
 	SDL_Event e;
 	float deltaTime = 0.0f;
 	auto lastFrame = std::chrono::high_resolution_clock::now();
