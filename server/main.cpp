@@ -11,6 +11,12 @@ static ISteamNetworkingSockets* g_networkingSockets = nullptr;
 static HSteamListenSocket g_listenSocket;
 static HSteamNetPollGroup g_pollGroup;
 
+struct Vec3 {
+	float x;
+	float y;
+	float z;
+};
+
 void OnSteamNetConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t *pInfo)
 {
 	if (pInfo->m_info.m_eState == k_ESteamNetworkingConnectionState_Connected) {
@@ -70,8 +76,9 @@ void run_server()
 		ISteamNetworkingMessage* incomingMsg = nullptr;
 		int numMsgs = g_networkingSockets->ReceiveMessagesOnPollGroup(g_pollGroup, &incomingMsg, 1);
 		if (numMsgs > 0 && incomingMsg) {
-			std::cout << "Received message: " << std::string((char*)incomingMsg->m_pData, incomingMsg->m_cbSize) << std::endl;
-		incomingMsg->Release();
+			Vec3* newPos = static_cast<Vec3*>(incomingMsg->m_pData);
+			std::cout << "X: " << newPos->x << "Y: " << newPos->y << "Z: " << newPos->z;
+			incomingMsg->Release();
 		}
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));

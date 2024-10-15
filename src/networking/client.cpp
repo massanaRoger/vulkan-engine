@@ -1,6 +1,11 @@
 #include "client.h"
+#include "core/camera.h"
+#include "core/components.h"
+#include "core/scene.h"
 #include "steam/isteamnetworkingsockets.h"
 #include "steam/steamnetworkingsockets.h"
+#include "steam/steamnetworkingtypes.h"
+#include <functional>
 #include <memory>
 #include <steam/isteamnetworkingutils.h>
 #include <format>
@@ -40,12 +45,12 @@ void Client::destroy()
 	GameNetworkingSockets_Kill();
 }
 
-void Client::run(const char* serverAddrStr) 
+void Client::run(const char* serverAddrStr, Camera& scene) 
 {
-	m_clientThread = std::make_unique<std::thread>(run_client_thread, serverAddrStr);
+	m_clientThread = std::make_unique<std::thread>(run_client_thread, serverAddrStr, std::ref(scene));
 }
 
-void Client::run_client_thread(const char* serverAddrStr)
+void Client::run_client_thread(const char* serverAddrStr, Camera& camera)
 {
 	SteamNetworkingIPAddr serverAddr;
 	serverAddr.Clear();
@@ -63,13 +68,12 @@ void Client::run_client_thread(const char* serverAddrStr)
 		int numMsgs = s_networkingSockets->ReceiveMessagesOnConnection(s_connection, &incomingMsg, 1);
 		if (numMsgs > 0 && incomingMsg) {
 			std::cout << "Received message: " << std::string((char*)incomingMsg->m_pData, incomingMsg->m_cbSize) << std::endl;
-		incomingMsg->Release();
+			incomingMsg->Release();
 		}
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-		const char* message = "Hello from the client!";
-		s_networkingSockets->SendMessageToConnection(s_connection, message, strlen(message), k_nSteamNetworkingSend_Reliable, nullptr);
+		SendData* data = &camera.position;
+		s_networkingSockets->SendMessageToConnection(s_connection, data, sizeof(SendData), k_nSteamNetworkingSend_Reliable, nullptr);
 	}
 }
 

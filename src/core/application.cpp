@@ -43,7 +43,7 @@ void Application::init()
 
 void Application::run()
 {
-	m_client.run("127.0.0.1");
+	m_client.run("127.0.0.1", m_camera);
 	SDL_Event e;
 	float deltaTime = 0.0f;
 	auto lastFrame = std::chrono::high_resolution_clock::now();
