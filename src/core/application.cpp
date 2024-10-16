@@ -35,7 +35,7 @@ void Application::init()
 	);
 	SDL_AddEventWatch(frame_buffer_callback, m_window);
 	m_renderer.init_vulkan(m_window, &m_scene);
-	auto error = m_client.init();
+	auto error = m_client.init("127.0.0.1");
 	if (error.code != Client::ErrorCode::Success) {
 		std::cerr << error.message << std::endl;
 	}
@@ -43,11 +43,12 @@ void Application::init()
 
 void Application::run()
 {
-	m_client.run("127.0.0.1", m_camera);
 	SDL_Event e;
 	float deltaTime = 0.0f;
 	auto lastFrame = std::chrono::high_resolution_clock::now();
 	while(!m_quit) {
+		m_client.poll_messages();
+
 		auto start = std::chrono::system_clock::now();
 		auto currentFrame = std::chrono::high_resolution_clock::now();
 		deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(currentFrame - lastFrame).count();
@@ -117,6 +118,8 @@ void Application::run()
 		//convert to microseconds (integer), and then come back to miliseconds
 		auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
 		m_renderer.stats.frameTime = elapsed.count() / 1000.f;
+
+		m_client.send_pos_update(m_camera);
 	}
 }
 

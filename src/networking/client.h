@@ -1,15 +1,12 @@
 #pragma once
 
 #include "core/camera.h"
-#include "glm/ext/vector_float3.hpp"
 #include "steam/isteamnetworkingsockets.h"
 #include "steam/steamnetworkingtypes.h"
 #include <iostream>
-#include <thread>
+#include <string>
 
 namespace Engine {
-
-typedef glm::vec3 SendData;
 
 static constexpr uint16_t SERVER_PORT = 27020;
 class Client {
@@ -17,6 +14,10 @@ public:
 	enum class ErrorCode {
 		Success,
 		NetworkingInitError,
+	};
+
+	enum class MessageType: uint8_t {
+		UpdatePos
 	};
 
 	struct Error {
@@ -31,17 +32,24 @@ public:
 	};
 
 	Client() = default;
-	Error init();
-	void destroy();
-	void run(const char* serverAddrStr, Camera& camera);
+	~Client();
+	Error init(const char* serverAddrStr);
+	void poll_messages();
+	void send_pos_update(Camera& camera);
 private:
+
+	#pragma pack(push, 1)
+	struct SendData {
+		uint8_t messageType;
+		float posX;
+		float posY;
+		float posZ;
+	};
+	#pragma pack(pop)
 
 	static ISteamNetworkingSockets* s_networkingSockets;
 	static HSteamNetConnection s_connection;
 
-	std::unique_ptr<std::thread> m_clientThread;
-
-	static void run_client_thread(const char* serverAddrStr, Camera& camera);
 	static void on_steam_net_connection_status_changed(SteamNetConnectionStatusChangedCallback_t *pInfo);
 };
 

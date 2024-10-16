@@ -1,16 +1,12 @@
 #include "client.h"
 #include "core/camera.h"
-#include "core/components.h"
-#include "core/scene.h"
+#include "glm/ext/vector_relational.hpp"
 #include "steam/isteamnetworkingsockets.h"
 #include "steam/steamnetworkingsockets.h"
 #include "steam/steamnetworkingtypes.h"
-#include <functional>
-#include <memory>
 #include <steam/isteamnetworkingutils.h>
 #include <format>
 #include <iostream>
-#include <thread>
 
 namespace Engine {
 
@@ -28,7 +24,7 @@ void Client::on_steam_net_connection_status_changed(SteamNetConnectionStatusChan
 	}
 }
 
-Client::Error Client::init() {
+Client::Error Client::init(const char* serverAddrStr) {
 	SteamDatagramErrMsg errMsg;
 	if (!GameNetworkingSockets_Init(nullptr, errMsg)) {
 		return Error(ErrorCode::NetworkingInitError, std::format("Failed to initialize networking: {}", errMsg));
@@ -36,22 +32,6 @@ Client::Error Client::init() {
 
 	s_networkingSockets = SteamNetworkingSockets();
 
-	return Error(ErrorCode::Success, "");
-}
-
-void Client::destroy()
-{
-	m_clientThread->join();
-	GameNetworkingSockets_Kill();
-}
-
-void Client::run(const char* serverAddrStr, Camera& scene) 
-{
-	m_clientThread = std::make_unique<std::thread>(run_client_thread, serverAddrStr, std::ref(scene));
-}
-
-void Client::run_client_thread(const char* serverAddrStr, Camera& camera)
-{
 	SteamNetworkingIPAddr serverAddr;
 	serverAddr.Clear();
 	serverAddr.ParseString(serverAddrStr);
@@ -62,18 +42,43 @@ void Client::run_client_thread(const char* serverAddrStr, Camera& camera)
 
 	s_connection = s_networkingSockets->ConnectByIPAddress(serverAddr, 1, &opt);
 
+	return Error(ErrorCode::Success, "");
+}
+
+Client::~Client()
+{
+	GameNetworkingSockets_Kill();
+}
+
+void Client::poll_messages()
+{
+	s_networkingSockets->RunCallbacks();
 	while (true) {
-		s_networkingSockets->RunCallbacks();
-		ISteamNetworkingMessage* incomingMsg = nullptr;
-		int numMsgs = s_networkingSockets->ReceiveMessagesOnConnection(s_connection, &incomingMsg, 1);
-		if (numMsgs > 0 && incomingMsg) {
-			std::cout << "Received message: " << std::string((char*)incomingMsg->m_pData, incomingMsg->m_cbSize) << std::endl;
-			incomingMsg->Release();
+		ISteamNetworkingMessage *incomingMessage = nullptr;
+		int numMsgs = s_networkingSockets->ReceiveMessagesOnConnection(s_connection, &incomingMessage, 1);
+		if (numMsgs == 0) {
+			// No more messages, break the loop
+			break;
+		}
+		if (numMsgs < 0) {
+			// Handle error
+			std::cerr << "Error checking for messages!" << std::endl;
+			break;
 		}
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(100));
-		SendData* data = &camera.position;
-		s_networkingSockets->SendMessageToConnection(s_connection, data, sizeof(SendData), k_nSteamNetworkingSend_Reliable, nullptr);
+		assert(numMsgs == 1 && incomingMessage);
+		std::cout << "Received message: " << std::string((char*)incomingMessage->m_pData, incomingMessage->m_cbSize) << std::endl;
+		incomingMessage->Release();
+	}
+}
+
+void Client::send_pos_update(Camera& camera)
+{
+	static glm::vec3 prevPos;
+	if (!glm::all(glm::equal(prevPos, camera.position))) {
+		prevPos = camera.position;
+		SendData data = { static_cast<uint8_t>(MessageType::UpdatePos), camera.position.x, camera.position.y, camera.position.z };
+		s_networkingSockets->SendMessageToConnection(s_connection, &data, sizeof(SendData), k_nSteamNetworkingSend_Reliable, nullptr);
 	}
 }
 
