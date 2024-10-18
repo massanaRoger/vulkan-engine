@@ -39,6 +39,7 @@ void Application::init()
 	if (error.code != Client::ErrorCode::Success) {
 		std::cerr << error.message << std::endl;
 	}
+	m_UUID = m_client.wait_for_uuid();
 }
 
 void Application::run()
@@ -47,7 +48,8 @@ void Application::run()
 	float deltaTime = 0.0f;
 	auto lastFrame = std::chrono::high_resolution_clock::now();
 	while(!m_quit) {
-		m_client.poll_messages();
+		auto positions = m_client.get_current_positions();
+		m_scene.update_positions(positions, m_UUID);
 
 		auto start = std::chrono::system_clock::now();
 		auto currentFrame = std::chrono::high_resolution_clock::now();
@@ -91,7 +93,7 @@ void Application::run()
 		ImGui::Text("Load scene");
 		ImGui::InputTextWithHint("File path", "Enter text here", loadFilePath, IM_ARRAYSIZE(loadFilePath));
 		if (ImGui::Button("Load")) {
-			m_scene.load_scene(loadFilePath);
+			m_scene.load_scene(loadFilePath, m_UUID);
 		}
 
 		static char saveFilePath[128] = "../../scenes/scene.json";
@@ -119,7 +121,7 @@ void Application::run()
 		auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
 		m_renderer.stats.frameTime = elapsed.count() / 1000.f;
 
-		m_client.send_pos_update(m_camera);
+		m_client.send_pos_update(m_camera, m_UUID);
 	}
 }
 

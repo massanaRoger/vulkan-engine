@@ -3,6 +3,7 @@
 #include "core/camera.h"
 #include "steam/isteamnetworkingsockets.h"
 #include "steam/steamnetworkingtypes.h"
+#include <cstdint>
 #include <iostream>
 #include <string>
 
@@ -17,7 +18,9 @@ public:
 	};
 
 	enum class MessageType: uint8_t {
-		UpdatePos
+		UpdatePos,
+		ClientCreateEntity,
+		EntityCreatedAck
 	};
 
 	struct Error {
@@ -35,22 +38,16 @@ public:
 	~Client();
 	Error init(const char* serverAddrStr);
 	void poll_messages();
-	void send_pos_update(Camera& camera);
+	uint64_t wait_for_uuid();
+	std::unordered_map<uint64_t, glm::vec3> get_current_positions();
+	void send_pos_update(Camera& camera, uint64_t uuid);
 private:
-
-	#pragma pack(push, 1)
-	struct SendData {
-		uint8_t messageType;
-		float posX;
-		float posY;
-		float posZ;
-	};
-	#pragma pack(pop)
-
 	static ISteamNetworkingSockets* s_networkingSockets;
 	static HSteamNetConnection s_connection;
 
 	static void on_steam_net_connection_status_changed(SteamNetConnectionStatusChangedCallback_t *pInfo);
+
+	void send_server_ack();
 };
 
 }

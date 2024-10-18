@@ -2,16 +2,29 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
-#include <format>
 #include <iostream>
-#include <map>
 #include <ostream>
+#include <random>
 #include <steam/steamnetworkingsockets.h>
-#include <string>
+#include <string.h>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 
 enum class MessageType: uint8_t {
-	UpdatePos
+	UpdatePos,
+	ClientCreateEntity,
+	EntityCreatedAck
+};
+
+struct ClientCreateEntity {
+	uint8_t messageType;
+	uint64_t entity;
+};
+
+struct EntityCreatedAck {
+	uint8_t messageType;
+	uint8_t created;
 };
 
 struct Vec3 {
@@ -20,14 +33,22 @@ struct Vec3 {
 	float z;
 };
 
+struct UpdatePos {
+	uint8_t messageType;
+	uint64_t uuid;
+	float posX;
+	float posY;
+	float posZ;
+};
+
 struct UpdatePosData {
 	Vec3 pos;
 };
 
 struct ClientData {
-	std::string nick;
 	Vec3 currentPos;
 	Vec3 prevPos;
+	uint64_t uuid;
 	bool dataChanged = false;
 };
 
@@ -37,11 +58,28 @@ static ISteamNetworkingSockets* g_networkingSockets = nullptr;
 static HSteamListenSocket g_listenSocket;
 static HSteamNetPollGroup g_pollGroup;
 
-static std::map<HSteamNetConnection, ClientData> g_connectedClients;
+static std::unordered_map<HSteamNetConnection, ClientData> g_connectedClients;
+static std::unordered_map<HSteamNetConnection, ClientData> g_pendingToConnectClients;
+
+static std::unordered_set<uint64_t> g_generatedIds;
+
+
+uint64_t generateUniqueId() {
+    static std::random_device rd;
+    static std::mt19937_64 gen(rd());
+    std::uniform_int_distribution<uint64_t> dis;
+
+    uint64_t newId;
+    do {
+        newId = dis(gen);
+    } while (g_generatedIds.find(newId) != g_generatedIds.end());
+
+    g_generatedIds.insert(newId);
+    return newId;
+}
 
 void set_client_nick(HSteamNetConnection conn, const char* nick)
 {
-	g_connectedClients[conn].nick = nick;
 	g_networkingSockets->SetConnectionName(conn, nick);
 }
 
@@ -76,9 +114,18 @@ void OnSteamNetConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t
 		}
 
 		char nick[ 64 ];
-		sprintf( nick, "BraveWarrior%d", 10000 + ( rand() % 100000 ) );
+		sprintf(nick, "BraveWarrior%d", 10000 + (rand() % 100000));
 
-		g_connectedClients[pInfo->m_hConn];
+		uint64_t uuid = generateUniqueId();
+
+		g_pendingToConnectClients[pInfo->m_hConn];
+		g_pendingToConnectClients[pInfo->m_hConn].uuid = uuid;
+
+		ClientCreateEntity createEntityRequest {};
+		createEntityRequest.messageType = static_cast<uint8_t>(MessageType::ClientCreateEntity);
+		createEntityRequest.entity = uuid;
+		g_networkingSockets->SendMessageToConnection(pInfo->m_hConn, &createEntityRequest, sizeof(ClientCreateEntity), k_nSteamNetworkingSend_Reliable, nullptr);
+
 		set_client_nick(pInfo->m_hConn, nick);
 	}
 }
@@ -91,10 +138,16 @@ void send_string_to_client(HSteamNetConnection conn, const char* str)
 void send_updates_to_all_clients()
 {
 	HSteamNetConnection except = k_HSteamNetConnection_Invalid;
-	for (auto& [k1, _] : g_connectedClients) {
-		for (auto& [_, v2] : g_connectedClients) {
+	for (auto& [k1, v1] : g_connectedClients) {
+		for (auto& [k2, v2] : g_connectedClients) {
 			if (k1 != except) {
-				send_string_to_client(k1, std::format("X: {}, Y: {}, Z: {}", v2.currentPos.x, v2.currentPos.y, v2.currentPos.z).c_str());
+				UpdatePos sendData{};
+				sendData.messageType = static_cast<uint8_t>(MessageType::UpdatePos);
+				sendData.posX = v2.currentPos.x;
+				sendData.posY = v2.currentPos.y;
+				sendData.posZ = v2.currentPos.z;
+				sendData.uuid = v2.uuid;
+				g_networkingSockets->SendMessageToConnection(k1, &sendData, sizeof(UpdatePos), k_nSteamNetworkingSend_Reliable, nullptr);
 			}
 		}
 	}
@@ -114,14 +167,28 @@ void poll_messages()
 		}
 
 		assert(numMsgs == 1 && incomingMessage);
-		auto itClient = g_connectedClients.find(incomingMessage->m_conn);
-		assert(itClient != g_connectedClients.end());
 
 		uint8_t messageType = *((uint8_t*)incomingMessage->m_pData);
 		if (messageType == static_cast<uint8_t>(MessageType::UpdatePos)) {
-			Vec3* playerUpdate = (Vec3*) (static_cast<char*>(incomingMessage->m_pData) + 1);
-			g_connectedClients[incomingMessage->m_conn].currentPos = *playerUpdate;
+			auto itClient = g_connectedClients.find(incomingMessage->m_conn);
+			assert(itClient != g_connectedClients.end());
+
+			UpdatePos* playerUpdate = reinterpret_cast<UpdatePos*>(incomingMessage->m_pData);
+			Vec3 newPos = { playerUpdate->posX, playerUpdate->posY, playerUpdate->posZ };
+			g_connectedClients[incomingMessage->m_conn].currentPos = newPos;
 			g_connectedClients[incomingMessage->m_conn].dataChanged = true;
+		} else if (messageType == static_cast<uint8_t>(MessageType::EntityCreatedAck)) {
+
+			auto itClient = g_pendingToConnectClients.find(incomingMessage->m_conn);
+			assert(itClient != g_pendingToConnectClients.end());
+
+			EntityCreatedAck* entityCreated = reinterpret_cast<EntityCreatedAck*>(incomingMessage->m_pData);
+			if (!g_pendingToConnectClients.contains(incomingMessage->m_conn) || !entityCreated->created) {
+				std::cerr << "Error creating the entity" << std::endl;
+				continue;
+			}
+			g_connectedClients[incomingMessage->m_conn] = std::move(g_pendingToConnectClients[incomingMessage->m_conn]);
+			g_pendingToConnectClients.erase(incomingMessage->m_conn);
 		}
 
 		incomingMessage->Release();

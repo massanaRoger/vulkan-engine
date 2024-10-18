@@ -1525,6 +1525,8 @@ void Renderer::update_loaded_scenes(Scene& scene)
 
 		m_loadedScenes[entity] = *structureFile;
 	}
+
+	// Load remaining players
 }
 
 VkSampleCountFlagBits Renderer::get_max_usable_sample_count()
@@ -1603,8 +1605,33 @@ void Renderer::update_scene(const Camera& camera)
 
 	auto meshView = registry.view<TransformComponent, MeshComponent>();
 	for (auto entity : meshView) {
-		const auto& transform = meshView.get<TransformComponent>(entity);
+		const auto& mesh = meshView.get<MeshComponent>(entity);
+
 		glm::mat4 model = glm::mat4(1.0f);
+
+		if (mesh.meshPath == "../../models/human.glb") {
+			auto playerView = registry.view<PlayerComponent, TransformComponent>();
+			for (entt::entity pl : playerView) {
+				const auto& playerComp = playerView.get<PlayerComponent>(pl);
+				if (playerComp.mc) {
+					continue;
+				}
+				const auto& transform = playerView.get<TransformComponent>(pl);
+				model = glm::translate(model, transform.position);
+
+				model = glm::rotate(model, glm::radians(transform.rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
+				model = glm::rotate(model, glm::radians(transform.rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
+				model = glm::rotate(model, glm::radians(transform.rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
+
+				model = glm::scale(model, transform.scale / 100.0f);
+
+				m_loadedScenes[entity]->draw(model, m_mainDrawContext);
+			}
+
+			continue;
+		}
+
+		const auto& transform = meshView.get<TransformComponent>(entity);
 
 		model = glm::translate(model, transform.position);
 

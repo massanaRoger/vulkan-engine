@@ -1,12 +1,18 @@
 #include "client.h"
 #include "core/camera.h"
-#include "glm/ext/vector_relational.hpp"
+#include "core/types.h"
+#include "glm/ext/vector_float3.hpp"
 #include "steam/isteamnetworkingsockets.h"
 #include "steam/steamnetworkingsockets.h"
 #include "steam/steamnetworkingtypes.h"
+#include <cstdint>
 #include <steam/isteamnetworkingutils.h>
 #include <format>
 #include <iostream>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <vector>
 
 namespace Engine {
 
@@ -50,8 +56,9 @@ Client::~Client()
 	GameNetworkingSockets_Kill();
 }
 
-void Client::poll_messages()
+std::unordered_map<uint64_t, glm::vec3> Client::get_current_positions()
 {
+	std::unordered_map<uint64_t, glm::vec3> positions;
 	s_networkingSockets->RunCallbacks();
 	while (true) {
 		ISteamNetworkingMessage *incomingMessage = nullptr;
@@ -67,17 +74,88 @@ void Client::poll_messages()
 		}
 
 		assert(numMsgs == 1 && incomingMessage);
-		std::cout << "Received message: " << std::string((char*)incomingMessage->m_pData, incomingMessage->m_cbSize) << std::endl;
+
+		struct UpdatePos {
+			uint8_t messageType;
+			uint64_t uuid;
+			float posX;
+			float posY;
+			float posZ;
+		};
+
+		uint8_t messageType = *((uint8_t*)incomingMessage->m_pData);
+		if (messageType == static_cast<uint8_t>(MessageType::UpdatePos)) {
+			UpdatePos* playerUpdate = reinterpret_cast<UpdatePos*>(incomingMessage->m_pData);
+			positions[playerUpdate->uuid] = glm::vec3(playerUpdate->posX, playerUpdate->posY, playerUpdate->posZ);
+		}
+
 		incomingMessage->Release();
 	}
+	return positions;
 }
 
-void Client::send_pos_update(Camera& camera)
+uint64_t Client::wait_for_uuid()
+{
+	bool entityReceived = false;
+	uint64_t playerUUID;
+	while (!entityReceived) {
+		ISteamNetworkingMessage *pIncomingMessage = nullptr;
+		int numMessages = s_networkingSockets->ReceiveMessagesOnConnection(s_connection, &pIncomingMessage, 1);
+
+		if (numMessages > 0 && pIncomingMessage) {
+
+			uint8_t messageType = *((uint8_t*)pIncomingMessage->m_pData);
+			if (!(messageType == static_cast<uint8_t>(MessageType::ClientCreateEntity))) {
+				continue;
+			}
+			struct ServerMessage {
+				uint8_t messageType;
+				uint64_t uuid;
+			};
+
+			ServerMessage *msg = reinterpret_cast<ServerMessage *>(pIncomingMessage->m_pData);
+
+			playerUUID = msg->uuid;
+
+			entityReceived = true;
+
+			pIncomingMessage->Release();
+
+			send_server_ack();
+		}
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+
+	return playerUUID;
+}
+
+void Client::send_server_ack()
+{
+	struct EntityCreatedAck {
+		uint8_t messageType;
+		uint8_t created;
+	};
+	EntityCreatedAck ack {};
+	ack.messageType = static_cast<uint8_t>(MessageType::EntityCreatedAck);
+	ack.created = true;
+
+	s_networkingSockets->SendMessageToConnection(s_connection, &ack, sizeof(EntityCreatedAck), 0, nullptr);
+}
+
+void Client::send_pos_update(Camera& camera, uint64_t uuid)
 {
 	static glm::vec3 prevPos;
 	if (!glm::all(glm::equal(prevPos, camera.position))) {
 		prevPos = camera.position;
-		SendData data = { static_cast<uint8_t>(MessageType::UpdatePos), camera.position.x, camera.position.y, camera.position.z };
+		struct SendData {
+			uint8_t messageType;
+			uint64_t uuid;
+			float x;
+			float y;
+			float z;
+		};
+		SendData data = { static_cast<uint8_t>(MessageType::UpdatePos), uuid, camera.position.x, camera.position.y, camera.position.z };
 		s_networkingSockets->SendMessageToConnection(s_connection, &data, sizeof(SendData), k_nSteamNetworkingSend_Reliable, nullptr);
 	}
 }

@@ -3,8 +3,12 @@
 #include "SDL_events.h"
 #include "SDL_video.h"
 #include "core/scene.h"
+#include "glm/ext/vector_float3.hpp"
 #include "networking/client.h"
 #include "vulkan/vk_renderer.h"
+#include <cstdint>
+#include <string>
+#include <unordered_map>
 
 namespace Engine {
 class Application {
@@ -20,6 +24,10 @@ private:
 	Camera m_camera;
 	Scene m_scene;
 	Client m_client;
+	uint64_t m_UUID;
+
+	std::unordered_map<std::string, glm::vec3> m_playersData;
+
 	bool m_quit = false;
 	bool m_showImguiWindow = true;
 

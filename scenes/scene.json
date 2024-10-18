@@ -1,7 +1,7 @@
 {
     "entities": [
         {
-            "name": "Main Camera",
+            "name": "Player",
             "transform": {
                 "position": [
                     0.0,
