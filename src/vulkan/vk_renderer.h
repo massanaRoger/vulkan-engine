@@ -147,6 +147,9 @@ public:
 	std::string opaquePipelineName;
 	std::string transparentPipelineName;
 
+	AllocatedImage colorAttachment;
+	VkFramebuffer framebuffer;
+
 	VkDescriptorSetLayout materialLayout;
 
 	struct MaterialConstants {
@@ -178,6 +181,27 @@ public:
 	void clear_resources(VkDevice device);
 
 	MaterialInstance write_material(VkDevice device, MaterialPass pass, const MaterialResources& resources, DescriptorAllocatorGrowable& descriptorAllocator);
+};
+
+struct PostProcessing {
+	std::string pipelineName;
+
+	AllocatedImage inputFramebuffer;
+	VkSampler inputFramebufferSampler;
+
+	AllocatedBuffer vertexBuffer;
+	AllocatedBuffer indexBuffer;
+
+	VkDescriptorSetLayout descriptorLayout;
+	VkDescriptorSet descriptorSet;
+
+	DescriptorWriter writer;
+
+	void build_pipelines(Renderer& renderer);
+	void write_material(VkDevice device, DescriptorAllocatorGrowable& descriptorAllocator);
+
+	VkRenderPass renderPass;
+
 };
 
 struct MeshNode : public Node {
@@ -221,11 +245,13 @@ public:
 	GLTFMetallic_Roughness metalRoughMaterial;
 	// Shadow shadow;
 	ShadowCube shadowcube;
+	PostProcessing postProcessing;
 
 	static Renderer& getInstance();
 
 	void init_vulkan(SDL_Window* window, Scene* scene);
 	void draw_frame(const Camera& camera, ImDrawData* drawData);
+	void draw_to_swapchain_framebuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	GPUMeshBuffers upload_mesh(std::vector<uint32_t>& indices, std::vector<Vertex>& vertices);
 
 	[[nodiscard]] VkDescriptorSetLayout get_gpu_scene_data_descriptor_layout() const;
@@ -253,7 +279,6 @@ private:
 	VkQueue m_presentQueue;
 	VkQueue m_transferQueue;
 	QueueFamilyIndices m_queueFamilies;
-
 
 	VkSurfaceKHR m_surface;
 
@@ -290,6 +315,9 @@ private:
 	OffscreenSceneData m_offscreenData;
 
 	DrawContext m_mainDrawContext;
+
+	AllocatedImage m_depthImage;
+	AllocatedImage m_colorImage;
 
 	//std::vector<MeshAsset*> m_testMeshes;
 	std::unordered_map<entt::entity, std::shared_ptr<LoadedGLTF>> m_loadedScenes;
@@ -330,10 +358,13 @@ private:
 	void create_descriptor_set_layout();
 
 	void prepare_cube_map();
+	void prepare_offscreen_data();
+	void prepare_screen_data();
 
 	void create_render_pass();
 	void create_shadow_render_pass();
 	void create_shadowcube_render_pass();
+	void create_swapchain_renderpass();
 
 	void init_default_data();
 

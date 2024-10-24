@@ -2,8 +2,9 @@
 #include "SDL_events.h"
 #include "SDL_video.h"
 #include "SDL_vulkan.h"
-#include "vulkan/vk_renderer.h"
 #include "vulkan/vk_types.h"
+#include <algorithm>
+#include <array>
 #include <iostream>
 #include <vulkan/vulkan_core.h>
 
@@ -63,37 +64,12 @@ void SwapchainManager::create_swapchain(VkDevice device, VkSurfaceKHR surface, V
 	vkGetSwapchainImagesKHR(device, m_swapchain, &imageCount, m_swapchainImages.data());
 }
 
-void SwapchainManager::create_cubemap_framebuffers(VkDevice device, VkRenderPass renderPass)
-{
-	m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
-	for (size_t i = 0; i < m_swapchainFramebuffers.size(); i++) {
-		std::array<VkImageView, 3> attachments = {
-			m_drawImage.imageView,
-			m_depthImage.imageView,
-			m_swapchainImageViews[i],
-		};
-
-		VkFramebufferCreateInfo framebufferInfo = {};
-		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebufferInfo.renderPass = renderPass;
-		framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-		framebufferInfo.pAttachments = attachments.data();
-		framebufferInfo.width = m_swapchainExtent.width;
-		framebufferInfo.height = m_swapchainExtent.height;
-		framebufferInfo.layers = 1;
-
-		VK_CHECK(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &m_swapchainFramebuffers[i]));
-	}
-}
-
 void SwapchainManager::create_swapchain_frame_buffers(VkDevice device, VkRenderPass renderPass)
 {
 
 	m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
 	for (size_t i = 0; i < m_swapchainFramebuffers.size(); i++) {
-		std::array<VkImageView, 3> attachments = {
-			m_drawImage.imageView,
-			m_depthImage.imageView,
+		std::array<VkImageView, 1> attachments = {
 			m_swapchainImageViews[i],
 		};
 
@@ -110,7 +86,7 @@ void SwapchainManager::create_swapchain_frame_buffers(VkDevice device, VkRenderP
 	}
 }
 
-void SwapchainManager::create_depth_images(VkDevice device, VkFormat depthFormat, VkSampleCountFlagBits samples, VmaAllocator allocator)
+void SwapchainManager::create_depth_images(VkDevice device, VkFormat depthFormat, VkSampleCountFlagBits samples, VmaAllocator allocator, AllocatedImage& depthImage)
 {
 	VkImageCreateInfo imageInfo{};
 	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -130,14 +106,14 @@ void SwapchainManager::create_depth_images(VkDevice device, VkFormat depthFormat
 	VmaAllocationCreateInfo allocInfo{};
 	allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-	if (vmaCreateImage(allocator, &imageInfo, &allocInfo, &m_depthImage.image, &m_depthImage.allocation, nullptr) != VK_SUCCESS) {
+	if (vmaCreateImage(allocator, &imageInfo, &allocInfo, &depthImage.image, &depthImage.allocation, nullptr) != VK_SUCCESS) {
 		std::cerr << "failed to create image with VMA!" << std::endl;
 		abort();
 	}
 
 	VkImageViewCreateInfo viewInfo{};
 	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	viewInfo.image = m_depthImage.image;
+	viewInfo.image = depthImage.image;
 	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	viewInfo.format = depthFormat;
 	viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -146,12 +122,12 @@ void SwapchainManager::create_depth_images(VkDevice device, VkFormat depthFormat
 	viewInfo.subresourceRange.baseArrayLayer = 0;
 	viewInfo.subresourceRange.layerCount = 1;
 
-	vkCreateImageView(device, &viewInfo, nullptr, &m_depthImage.imageView);
+	vkCreateImageView(device, &viewInfo, nullptr, &depthImage.imageView);
 }
 
-void SwapchainManager::create_color_images(VkDevice device, VkSampleCountFlagBits samples, VmaAllocator allocator)
+void SwapchainManager::create_color_images(VkDevice device, VkSampleCountFlagBits samples, VmaAllocator allocator, AllocatedImage& colorImage)
 {
-	VkFormat colorFormat = m_swapchainImageFormat;
+	// VkFormat colorFormat = m_swapchainImageFormat;
 
 	VkImageCreateInfo imageInfo{};
 	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -161,7 +137,7 @@ void SwapchainManager::create_color_images(VkDevice device, VkSampleCountFlagBit
 	imageInfo.extent.depth = 1;
 	imageInfo.mipLevels = 1;
 	imageInfo.arrayLayers = 1;
-	imageInfo.format = colorFormat;
+	imageInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
@@ -171,22 +147,22 @@ void SwapchainManager::create_color_images(VkDevice device, VkSampleCountFlagBit
 	VmaAllocationCreateInfo allocInfo{};
 	allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-	if (vmaCreateImage(allocator, &imageInfo, &allocInfo, &m_drawImage.image, &m_drawImage.allocation, nullptr) != VK_SUCCESS) {
+	if (vmaCreateImage(allocator, &imageInfo, &allocInfo, &colorImage.image, &colorImage.allocation, nullptr) != VK_SUCCESS) {
 		std::cerr << "failed to create image with VMA!" << std::endl;
 		abort();
 	}
 
 	VkImageViewCreateInfo viewInfo{};
 	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	viewInfo.image = m_drawImage.image;
+	viewInfo.image = colorImage.image;
 	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	viewInfo.format = colorFormat;
+	viewInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	viewInfo.subresourceRange.baseMipLevel = 0;
 	viewInfo.subresourceRange.levelCount = 1;
 	viewInfo.subresourceRange.baseArrayLayer = 0;
 	viewInfo.subresourceRange.layerCount = 1;
-	vkCreateImageView(device, &viewInfo, nullptr, &m_drawImage.imageView);
+	vkCreateImageView(device, &viewInfo, nullptr, &colorImage.imageView);
 
 }
 
@@ -212,6 +188,7 @@ VkFramebuffer SwapchainManager::get_swapchain_framebuffer(uint32_t index) const
 
 void SwapchainManager::cleanup_swapchain(VkDevice device, VmaAllocator allocator)
 {
+	/*
 	vkDestroyImageView(device, m_depthImage.imageView, nullptr);
 	vmaDestroyImage(allocator, m_depthImage.image, m_depthImage.allocation);
 
@@ -227,6 +204,7 @@ void SwapchainManager::cleanup_swapchain(VkDevice device, VmaAllocator allocator
 	}
 
 	vkDestroySwapchainKHR(device, m_swapchain, nullptr);
+	*/
 }
 
 SwapchainSupportDetails SwapchainManager::query_swapchain_support(VkPhysicalDevice device, VkSurfaceKHR surface)
@@ -300,8 +278,9 @@ void SwapchainManager::recreate_swapchain(VkDevice device, SDL_Window* window, V
 
 	create_swapchain_image_views(device);
 	create_swapchain_frame_buffers(device, renderPass);
-	create_color_images(device, colorSamples, allocator);
+	/*create_color_images(device, colorSamples, allocator);
 	create_depth_images(device, depthFormat, depthSamples, allocator);
+	*/
 }
 
 

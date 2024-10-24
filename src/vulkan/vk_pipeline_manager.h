@@ -26,8 +26,10 @@ struct PipelineContext {
 
 	VkCompareOp depthCompare;
 	VkBool32 depthWriteEnable{ VK_TRUE };
+	VkBool32 depthTestEnable{ VK_TRUE };
 
 	std::optional<VkPipelineColorBlendAttachmentState*> colorBlendAttachment;
+	std::optional<VkPipelineVertexInputStateCreateInfo> vertexInputState;
 
 	VkPipelineShaderStageCreateInfo* shaderStages;
 	uint32_t numShaders;

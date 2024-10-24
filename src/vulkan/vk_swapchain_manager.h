@@ -34,10 +34,8 @@ public:
 	void create_swapchain_image_views(VkDevice device);
 	void create_swapchain_frame_buffers(VkDevice device, VkRenderPass renderPass);
 
-	void create_cubemap_framebuffers(VkDevice device, VkRenderPass renderPass);
-
-	void create_depth_images(VkDevice device, VkFormat depthFormat, VkSampleCountFlagBits samples, VmaAllocator allocator);
-	void create_color_images(VkDevice device, VkSampleCountFlagBits samples, VmaAllocator allocator);
+	void create_depth_images(VkDevice device, VkFormat depthFormat, VkSampleCountFlagBits samples, VmaAllocator allocator, AllocatedImage& depthImage);
+	void create_color_images(VkDevice device, VkSampleCountFlagBits samples, VmaAllocator allocator, AllocatedImage& colorImage);
 
 	[[nodiscard]] VkSwapchainKHR get_swapchain() const;
 	[[nodiscard]] VkFormat get_swapchain_image_format() const;
@@ -51,9 +49,6 @@ private:
 	std::vector<VkImageView> m_swapchainImageViews;
 	std::vector<VkFramebuffer> m_swapchainFramebuffers;
 	VkExtent2D m_swapchainExtent;
-
-	AllocatedImage m_drawImage;
-	AllocatedImage m_depthImage;
 
 	VkSurfaceFormatKHR choose_swapchain_format(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 	VkPresentModeKHR choose_swapchain_present_mode(const std::vector<VkPresentModeKHR>& availablePresentModes);

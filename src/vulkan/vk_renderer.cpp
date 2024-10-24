@@ -5,6 +5,7 @@
 #include "core/components.h"
 #include "core/scene.h"
 #include "glm/ext/matrix_float4x4.hpp"
+#include "glm/ext/vector_float2.hpp"
 #include "glm/ext/vector_float4.hpp"
 #include "glm/geometric.hpp"
 #include "vk_types.h"
@@ -62,14 +63,18 @@ void Renderer::init_vulkan(SDL_Window* window, Scene* sc)
 	// create_shadow_render_pass();
 	create_shadowcube_render_pass();
 	create_render_pass();
+	create_swapchain_renderpass();
 	init_imgui();
 	create_descriptor_set_layout();
 	metalRoughMaterial.build_pipelines(getInstance());
 	shadowcube.build_pipelines(getInstance());
+	postProcessing.build_pipelines(getInstance());
 	create_command_pools();
 	create_color_resources();
 	create_depth_resources();
 	prepare_cube_map();
+	prepare_offscreen_data();
+	prepare_screen_data();
 	create_frame_buffers();
 	create_descriptor_sets();
 	create_scene_data();
@@ -817,7 +822,7 @@ void Renderer::create_render_pass()
 {
 	VkAttachmentDescription2 colorAttachment{};
 	colorAttachment.sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2;
-	colorAttachment.format = swapchainManager.get_swapchain_image_format();
+	colorAttachment.format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	colorAttachment.samples = msaaSamples;
 	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -830,7 +835,6 @@ void Renderer::create_render_pass()
 	colorAttachmentRef.sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
 	colorAttachmentRef.attachment = 0;
 	colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
 
 	VkAttachmentDescription2 depthAttachment{};
 	depthAttachment.sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2;
@@ -852,14 +856,14 @@ void Renderer::create_render_pass()
 
 	VkAttachmentDescription2 colorAttachmentResolve{};
 	colorAttachmentResolve.sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2;
-	colorAttachmentResolve.format = swapchainManager.get_swapchain_image_format();
+	colorAttachmentResolve.format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	colorAttachmentResolve.samples = VK_SAMPLE_COUNT_1_BIT;
 	colorAttachmentResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	colorAttachmentResolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 	colorAttachmentResolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	colorAttachmentResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	colorAttachmentResolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	colorAttachmentResolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	colorAttachmentResolve.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	VkAttachmentReference2 colorAttachmentResolveRef{};
 	colorAttachmentResolveRef.sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
@@ -874,6 +878,27 @@ void Renderer::create_render_pass()
 	subpass.pDepthStencilAttachment = &depthAttachmentRef;
 	subpass.pResolveAttachments = &colorAttachmentResolveRef;
 
+#if 0 
+	std::array<VkSubpassDependency2, 2> dependencies;
+	dependencies[0] = {
+		.sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2,
+		.srcSubpass = VK_SUBPASS_EXTERNAL,
+		.dstSubpass = 0,
+		.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+		.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+		.srcAccessMask = 0,
+		.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+	};
+	dependencies[1] = {
+		.sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2,
+		.srcSubpass = 0,
+		.dstSubpass = VK_SUBPASS_EXTERNAL,
+		.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+		.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+		.srcAccessMask = 0,
+		.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+	};
+#endif
 	VkSubpassDependency2 dependency{};
 	dependency.sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2;
 	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -894,6 +919,41 @@ void Renderer::create_render_pass()
 	renderPassInfo.pDependencies = &dependency;
 
 	VK_CHECK(vkCreateRenderPass2(device, &renderPassInfo, nullptr, &renderPass));
+}
+
+void Renderer::create_swapchain_renderpass()
+{
+	VkAttachmentDescription2 colorAttachment{};
+	colorAttachment.sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2;
+	colorAttachment.format = swapchainManager.get_swapchain_image_format();
+	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	VkAttachmentReference2 colorAttachmentRef{};
+	colorAttachmentRef.sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
+	colorAttachmentRef.attachment = 0;
+	colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkSubpassDescription2 subpass{};
+	subpass.sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2;
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colorAttachmentRef;
+
+	std::array<VkAttachmentDescription2, 1> attachments = { colorAttachment };
+	VkRenderPassCreateInfo2 renderPassInfo{};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2;
+	renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+	renderPassInfo.pAttachments = attachments.data();
+	renderPassInfo.subpassCount = 1;
+	renderPassInfo.pSubpasses = &subpass;
+
+	VK_CHECK(vkCreateRenderPass2(device, &renderPassInfo, nullptr, &postProcessing.renderPass));
 }
 
 void Renderer::create_frame_buffers()
@@ -934,8 +994,24 @@ void Renderer::create_frame_buffers()
 		VK_CHECK(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &shadowcube.framebuffers[i]));
 	}
 
+	std::array<VkImageView, 3> attachments = {
+		m_colorImage.imageView,
+		m_depthImage.imageView,
+		metalRoughMaterial.colorAttachment.imageView,
+	};
 
-	swapchainManager.create_swapchain_frame_buffers(device, renderPass);
+	VkFramebufferCreateInfo offscreenFrameBufferInfo = {};
+	offscreenFrameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	offscreenFrameBufferInfo.renderPass = renderPass;
+	offscreenFrameBufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+	offscreenFrameBufferInfo.pAttachments = attachments.data();
+	offscreenFrameBufferInfo.width = swapchainManager.get_swapchain_extent().width;
+	offscreenFrameBufferInfo.height = swapchainManager.get_swapchain_extent().height;
+	offscreenFrameBufferInfo.layers = 1;
+
+	vkCreateFramebuffer(device, &offscreenFrameBufferInfo, nullptr, &metalRoughMaterial.framebuffer);
+
+	swapchainManager.create_swapchain_frame_buffers(device, postProcessing.renderPass);
 }
 
 void Renderer::create_command_pools()
@@ -962,8 +1038,7 @@ void Renderer::prepare_cube_map()
 
 	VkFormat format = VK_FORMAT_R32_SFLOAT;
 	// Cube map image description
-	resourceManager.create_image(shadowMapize, shadowMapize, 1, VK_SAMPLE_COUNT_1_BIT, format, VK_IMAGE_TILING_OPTIMAL, 
-			      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_GPU_ONLY, shadowcube.cubeMap.image, shadowcube.cubeMap.allocation, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT, 6);
+	resourceManager.create_image(shadowMapize, shadowMapize, 1, VK_SAMPLE_COUNT_1_BIT, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_GPU_ONLY, shadowcube.cubeMap.image, shadowcube.cubeMap.allocation, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT, 6);
 
 	resourceManager.transition_image_layout(device, m_graphicsCommandPool, m_graphicsQueue, shadowcube.cubeMap.image, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 6);
 
@@ -1007,6 +1082,81 @@ void Renderer::prepare_cube_map()
 	}
 }
 
+void Renderer::prepare_offscreen_data()
+{
+	resourceManager.create_image(swapchainManager.get_swapchain_extent().width, swapchainManager.get_swapchain_extent().height, 1, VK_SAMPLE_COUNT_1_BIT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_TILING_OPTIMAL, 
+			      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_GPU_ONLY, metalRoughMaterial.colorAttachment.image, metalRoughMaterial.colorAttachment.allocation);
+	VkSamplerCreateInfo sampler{};
+	sampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler.magFilter = VK_FILTER_LINEAR;
+	sampler.minFilter = VK_FILTER_LINEAR;
+	sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	sampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+	sampler.addressModeV = sampler.addressModeU;
+	sampler.addressModeW = sampler.addressModeU;
+	sampler.mipLodBias = 0.0f;
+	sampler.maxAnisotropy = 1.0f;
+	sampler.compareOp = VK_COMPARE_OP_NEVER;
+	sampler.minLod = 0.0f;
+	sampler.maxLod = 1.0f;
+	sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+	VK_CHECK(vkCreateSampler(device, &sampler, nullptr, &shadowcube.cubemapSampler));
+
+	VkImageViewCreateInfo view{};
+	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view.image = VK_NULL_HANDLE;
+	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	view.components = { VK_COMPONENT_SWIZZLE_R };
+	view.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+	view.subresourceRange.layerCount = 1;
+	view.image = metalRoughMaterial.colorAttachment.image;
+	VK_CHECK(vkCreateImageView(device, &view, nullptr, &metalRoughMaterial.colorAttachment.imageView));
+}
+
+void Renderer::prepare_screen_data()
+{
+	resourceManager.create_image(shadowMapize, shadowMapize, 1, VK_SAMPLE_COUNT_1_BIT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_TILING_OPTIMAL, 
+			      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_GPU_ONLY, postProcessing.inputFramebuffer.image, postProcessing.inputFramebuffer.allocation);
+
+	VkSamplerCreateInfo sampler{};
+	sampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler.magFilter = VK_FILTER_LINEAR;
+	sampler.minFilter = VK_FILTER_LINEAR;
+	sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	sampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+	sampler.addressModeV = sampler.addressModeU;
+	sampler.addressModeW = sampler.addressModeU;
+	sampler.mipLodBias = 0.0f;
+	sampler.maxAnisotropy = 1.0f;
+	sampler.compareOp = VK_COMPARE_OP_NEVER;
+	sampler.minLod = 0.0f;
+	sampler.maxLod = 1.0f;
+	sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+	VK_CHECK(vkCreateSampler(device, &sampler, nullptr, &postProcessing.inputFramebufferSampler));
+
+	VkImageViewCreateInfo view{};
+	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view.image = VK_NULL_HANDLE;
+	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	view.components = { VK_COMPONENT_SWIZZLE_R };
+	view.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+	view.subresourceRange.layerCount = 1;
+	view.image = metalRoughMaterial.colorAttachment.image;
+	VK_CHECK(vkCreateImageView(device, &view, nullptr, &postProcessing.inputFramebuffer.imageView));
+
+	
+	std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes =
+	{
+		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
+	};
+
+	DescriptorAllocatorGrowable descriptorAllocatorGrowable;
+	descriptorAllocatorGrowable.init(device, 10, sizes);
+
+	postProcessing.write_material(device, descriptorAllocatorGrowable);
+}
 
 void Renderer::create_depth_resources()
 {
@@ -1016,8 +1166,7 @@ void Renderer::create_depth_resources()
 		VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
 	);
 
-	swapchainManager.create_depth_images(device, depthFormat, msaaSamples, resourceManager.get_allocator());
-
+	swapchainManager.create_depth_images(device, depthFormat, msaaSamples, resourceManager.get_allocator(), m_depthImage);
 
 	VkImageCreateInfo imageInfo{};
 	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -1117,7 +1266,7 @@ void Renderer::create_depth_resources()
 
 void Renderer::create_color_resources()
 {
-	swapchainManager.create_color_images(device, msaaSamples, resourceManager.get_allocator());
+	swapchainManager.create_color_images(device, msaaSamples, resourceManager.get_allocator(), m_colorImage);
 }
 
 VkFormat Renderer::find_supported_format(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features)
@@ -1172,7 +1321,55 @@ void Renderer::create_scene_data()
 {
 	m_gpuSceneDataBuffer = resourceManager.create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_queueFamilies);
 	m_offscrenSceneDataBuffer = resourceManager.create_buffer(sizeof(OffscreenSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_queueFamilies);
+
+	struct VertexData {
+		glm::vec2 position;
+		glm::vec2 texCoord;
+	};
+
+	VertexData vertices[4] = {
+		{ {-1.0f, -1.0f}, {0.0f, 0.0f} },
+		{ {-1.0f,  1.0f}, {0.0f, 1.0f} },
+		{ { 1.0f, -1.0f}, {1.0f, 0.0f} },
+		{ { 1.0f,  1.0f}, {1.0f, 1.0f} }
+	};
+
+	uint32_t indices[6] = {
+		0, 1, 2,
+		2, 1, 3
+	};
+
+
+	const size_t vertexBufferSize = 4 * sizeof(VertexData);
+	const size_t indexBufferSize = 6 * sizeof(uint32_t);
+
+	AllocatedBuffer vertexStagingBuffer = resourceManager.create_buffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_queueFamilies);
+
+	void* vertexData;
+	vmaMapMemory(resourceManager.get_allocator(), vertexStagingBuffer.allocation, &vertexData);
+	memcpy(vertexData, vertices, static_cast<size_t>(vertexBufferSize));
+	vmaUnmapMemory(resourceManager.get_allocator(), vertexStagingBuffer.allocation);
+
+	postProcessing.vertexBuffer = resourceManager.create_buffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SHARING_MODE_CONCURRENT, m_queueFamilies);
+
+	resourceManager.copy_buffer(device, m_graphicsCommandPool, m_graphicsQueue, vertexStagingBuffer.buffer, postProcessing.vertexBuffer.buffer, vertexBufferSize);
+
+	resourceManager.destroy_buffer(vertexStagingBuffer);
+
+	AllocatedBuffer indexStagingBuffer = resourceManager.create_buffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,  VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_queueFamilies);
+
+	void* indexData;
+	vmaMapMemory(resourceManager.get_allocator(), indexStagingBuffer.allocation, &indexData);
+	memcpy(indexData, indices, static_cast<size_t>(indexBufferSize));
+	vmaUnmapMemory(resourceManager.get_allocator(), indexStagingBuffer.allocation);
+
+	postProcessing.indexBuffer = resourceManager.create_buffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SHARING_MODE_EXCLUSIVE, m_queueFamilies);
+
+	resourceManager.copy_buffer(device, m_graphicsCommandPool, m_graphicsQueue, indexStagingBuffer.buffer, postProcessing.indexBuffer.buffer, indexBufferSize);
+
+	resourceManager.destroy_buffer(indexStagingBuffer);
 }
+
 void Renderer::create_command_buffers()
 {
 	m_commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
@@ -1230,62 +1427,6 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 	std::array<VkClearValue, 2> clearValues;
 
 	/*
-		First render pass: Generate shadow map by rendering the scene from light's POV
-	*/
-	/*{
-		clearValues[0].depthStencil = { 1.0f, 0 };
-
-		VkRenderPassBeginInfo renderPassBeginInfo{};
-		renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		renderPassBeginInfo.renderPass = shadow.renderPass;
-		renderPassBeginInfo.framebuffer = shadow.framebuffer;
-		renderPassBeginInfo.renderArea.extent.width = shadowMapize;
-		renderPassBeginInfo.renderArea.extent.height = shadowMapize;
-		renderPassBeginInfo.clearValueCount = 1;
-		renderPassBeginInfo.pClearValues = clearValues.data();
-
-		vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
-		// Depth bias (and slope) are used to avoid shadowing artifacts
-		// Constant depth bias factor (always applied)
-		float depthBiasConstant = 1.25f;
-		// Slope depth bias factor, applied depending on polygon's slope
-		float depthBiasSlope = 1.75f;
-
-		// Set depth bias (aka "Polygon offset")
-		// Required to avoid shadow mapping artifacts
-		vkCmdSetDepthBias(
-			commandBuffer,
-			depthBiasConstant,
-			0.0f,
-		depthBiasSlope);
-
-		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow.pipeline.pipeline);
-
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow.pipeline.layout, 0, 1, &globalDescriptor, 0, nullptr);
-
-		for (const RenderObject& obj : m_mainDrawContext.opaqueSurfaces) {
-			vkCmdBindIndexBuffer(commandBuffer, obj.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-			float near_plane = 1.0f, far_plane = 7.5f;
-			glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
-
-			PushConstants pushConstants;
-			pushConstants.vertexBuffer = obj.vertexBufferAddress;
-			pushConstants.worldMatrix = obj.transform;
-			pushConstants.lightSpaceMatrix = lightProjection * lightViewMatrix;
-			vkCmdPushConstants(commandBuffer, shadow.pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
-
-			vkCmdDrawIndexed(commandBuffer, obj.indexCount, 1, obj.firstIndex,0,0);
-		}
-
-		vkCmdEndRenderPass(commandBuffer);
-	}*/
-
-	/*
 		First render pass: Generate cube map by rendering the scene from light's POV in all directions
 	*/
 	{
@@ -1309,7 +1450,8 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 	VkRenderPassBeginInfo renderPassInfo{};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	renderPassInfo.renderPass = renderPass;
-	renderPassInfo.framebuffer = swapchainManager.get_swapchain_framebuffer(imageIndex);
+	//renderPassInfo.framebuffer = swapchainManager.get_swapchain_framebuffer(imageIndex);
+	renderPassInfo.framebuffer = metalRoughMaterial.framebuffer;
 	renderPassInfo.renderArea.offset = { 0, 0 };
 	renderPassInfo.renderArea.extent = swapchainManager.get_swapchain_extent();
 
@@ -1402,6 +1544,8 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 
 	vkCmdEndRenderPass2(commandBuffer, &subpassEndInfo);
 
+	draw_to_swapchain_framebuffer(commandBuffer, imageIndex);
+
 	VK_CHECK(vkEndCommandBuffer(commandBuffer));
 
 	auto end = std::chrono::system_clock::now();
@@ -1409,6 +1553,63 @@ void Renderer::record_command_buffer(VkCommandBuffer commandBuffer, uint32_t ima
 	auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
 	stats.meshDrawTime = elapsed.count() / 1000.f;
 
+}
+
+void Renderer::draw_to_swapchain_framebuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex)
+{
+
+	std::array<VkClearValue, 2> clearValues;
+
+	VkRenderPassBeginInfo renderPassInfo{};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	renderPassInfo.renderPass = postProcessing.renderPass;
+	renderPassInfo.framebuffer = swapchainManager.get_swapchain_framebuffer(imageIndex);
+	renderPassInfo.renderArea.offset = { 0, 0 };
+	renderPassInfo.renderArea.extent = swapchainManager.get_swapchain_extent();
+
+	clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+	clearValues[1].depthStencil = {1.0f, 0};
+	renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+	renderPassInfo.pClearValues = clearValues.data();
+
+	VkSubpassBeginInfo subpassBeginInfo{};
+	subpassBeginInfo.sType = VK_STRUCTURE_TYPE_SUBPASS_BEGIN_INFO;
+	subpassBeginInfo.contents = VK_SUBPASS_CONTENTS_INLINE;
+
+	VkSubpassEndInfo subpassEndInfo{};
+	subpassEndInfo.sType = VK_STRUCTURE_TYPE_SUBPASS_END_INFO;
+
+	vkCmdBeginRenderPass2(commandBuffer, &renderPassInfo, &subpassBeginInfo);
+
+	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineManager.get_pipeline(postProcessing.pipelineName).pipeline);
+
+	VkDeviceSize offsets[] = {0};
+	vkCmdBindVertexBuffers(commandBuffer, 0, 1, &postProcessing.vertexBuffer.buffer, offsets);
+	vkCmdBindIndexBuffer(commandBuffer, postProcessing.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineManager.get_pipeline(postProcessing.pipelineName).layout, 0, 1, &postProcessing.descriptorSet, 0, nullptr);
+
+	VkViewport viewport = {};
+	viewport.x = 0;
+	viewport.y = 0;
+	viewport.width = (float)swapchainManager.get_swapchain_extent().width;
+	viewport.height = (float)swapchainManager.get_swapchain_extent().height;
+	viewport.minDepth = 0.f;
+	viewport.maxDepth = 1.f;
+
+	vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+	VkRect2D scissor = {};
+	scissor.offset.x = 0;
+	scissor.offset.y = 0;
+	scissor.extent.width = swapchainManager.get_swapchain_extent().width;
+	scissor.extent.height = swapchainManager.get_swapchain_extent().height;
+
+	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+	vkCmdDrawIndexed(commandBuffer, 6, 1, 0, 0, 0);
+
+	vkCmdEndRenderPass2(commandBuffer, &subpassEndInfo);
 }
 
 void Renderer::update_cube_face(uint32_t faceIndex, VkCommandBuffer commandBuffer, VkDescriptorSet descriptor)
@@ -2090,6 +2291,124 @@ void GLTFMetallic_Roughness::clear_resources(VkDevice device)
 	renderer.pipelineManager.destroy_pipeline(transparentPipelineName);
 
 	vkDestroyDescriptorSetLayout(device, materialLayout, nullptr);
+}
+
+
+void PostProcessing::build_pipelines(Renderer& renderer)
+{
+	auto fragShaderCode = read_file("../../shaders/postProcessing.frag.spv");
+	auto vertShaderCode = read_file("../../shaders/postProcessing.vert.spv");
+
+	VkShaderModule shadowFragShader = create_shader_module(renderer.device, fragShaderCode);
+	VkShaderModule shadowVertexShader = create_shader_module(renderer.device, vertShaderCode);
+
+	VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+	samplerLayoutBinding.binding = 0;
+	samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	samplerLayoutBinding.descriptorCount = 1;
+	samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	samplerLayoutBinding.pImmutableSamplers = nullptr;
+
+	std::array<VkDescriptorSetLayoutBinding, 1> bindings = { samplerLayoutBinding };
+
+	VkDescriptorSetLayoutCreateInfo layoutInfo{};
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+	layoutInfo.pBindings = bindings.data();
+
+	VK_CHECK(vkCreateDescriptorSetLayout(renderer.device, &layoutInfo, nullptr, &descriptorLayout));
+
+	VkDescriptorSetLayout layouts[] = { descriptorLayout };
+	
+	VkPipelineLayoutCreateInfo meshLayoutInfo{};
+	meshLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	meshLayoutInfo.setLayoutCount = 1;
+	meshLayoutInfo.pSetLayouts = layouts;
+	meshLayoutInfo.pushConstantRangeCount = 0;
+
+	VkPipelineLayout newShadowPipeline;
+	VK_CHECK(vkCreatePipelineLayout(renderer.device, &meshLayoutInfo, nullptr, &newShadowPipeline));
+
+	VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+	vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+	vertShaderStageInfo.module = shadowVertexShader;
+	vertShaderStageInfo.pName = "main";
+
+	VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+	fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	fragShaderStageInfo.module = shadowFragShader;
+	fragShaderStageInfo.pName = "main";
+
+	VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+
+	std::array<VkVertexInputBindingDescription, 1> vertexInputBindings = {};
+	vertexInputBindings[0] = {
+		.binding = 0,
+		.stride = sizeof(float) * 4,
+		.inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+	};
+
+	std::array<VkVertexInputAttributeDescription, 2> vertexAttributeDescriptions = {};
+	vertexAttributeDescriptions[0] = {
+		.location = 0,
+		.binding = 0,
+		.format = VK_FORMAT_R32G32_SFLOAT,
+		.offset = 0,
+	};
+	vertexAttributeDescriptions[1] = {
+		.location = 1,
+		.binding = 0,
+		.format = VK_FORMAT_R32G32_SFLOAT,
+		.offset = sizeof(float) * 2,
+	};
+
+	VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
+	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	vertexInputInfo.pVertexBindingDescriptions = vertexInputBindings.data();
+	vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexInputBindings.size());
+	vertexInputInfo.pVertexAttributeDescriptions = vertexAttributeDescriptions.data();
+	vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexAttributeDescriptions.size());
+
+	PipelineContext ctx = {};
+	ctx.layout = newShadowPipeline;
+	ctx.renderPass = renderPass;
+
+	ctx.vpWidth = renderer.shadowMapize;
+	ctx.vpHeight = renderer.shadowMapize;
+	ctx.scissorExtent.width = renderer.shadowMapize;
+	ctx.scissorExtent.height = renderer.shadowMapize;
+
+	ctx.cullMode = VK_CULL_MODE_BACK_BIT;
+	ctx.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+	ctx.vertexInputState = vertexInputInfo;
+
+	ctx.samples = VK_SAMPLE_COUNT_1_BIT;
+
+	ctx.depthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
+
+	ctx.shaderStages = shaderStages;
+	ctx.numShaders = 2;
+
+	pipelineName = "PostProcessingPipeline";
+
+	renderer.pipelineManager.create_pipeline(pipelineName, ctx);
+
+	vkDestroyShaderModule(renderer.device, shadowFragShader , nullptr);
+	vkDestroyShaderModule(renderer.device, shadowVertexShader, nullptr);
+}
+
+void PostProcessing::write_material(VkDevice device, DescriptorAllocatorGrowable& descriptorAllocator)
+{
+	writer.clear();
+	writer.write_image(0, inputFramebuffer.imageView, inputFramebufferSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+
+	descriptorSet = descriptorAllocator.allocate(device, descriptorLayout);
+
+	writer.update_set(device, descriptorSet);
 }
 
 MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, MaterialPass pass, const MaterialResources& resources, DescriptorAllocatorGrowable& descriptorAllocator)

@@ -123,8 +123,8 @@ void PipelineManager::create_pipeline(std::string& name, PipelineContext& contex
 
 	VkPipelineDepthStencilStateCreateInfo depthStencil{};
 	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	depthStencil.depthTestEnable = VK_TRUE;
-	depthStencil.depthWriteEnable = VK_TRUE;
+	depthStencil.depthTestEnable = context.depthTestEnable;
+	depthStencil.depthWriteEnable = context.depthWriteEnable;
 	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
 	depthStencil.depthBoundsTestEnable = VK_FALSE;
 	depthStencil.stencilTestEnable = VK_FALSE;
@@ -134,6 +134,10 @@ void PipelineManager::create_pipeline(std::string& name, PipelineContext& contex
 	depthStencil.maxDepthBounds = 1.f;
 
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+
+	if (context.vertexInputState.has_value()) {
+		vertexInputInfo = context.vertexInputState.value();
+	}
 
 	VkGraphicsPipelineCreateInfo pipelineInfo{};
 	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
