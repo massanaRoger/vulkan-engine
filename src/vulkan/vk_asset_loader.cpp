@@ -136,6 +136,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 	int data_index = 0;
 	GLTFMetallic_Roughness::MaterialConstants* sceneMaterialConstants = (GLTFMetallic_Roughness::MaterialConstants*)file.materialDataBuffer.info.pMappedData;
 
+
 	for (fastgltf::Material& mat : gltf.materials) {
 		std::shared_ptr<GLTFMaterial> newMat = std::make_shared<GLTFMaterial>();
 		materials.push_back(newMat);
