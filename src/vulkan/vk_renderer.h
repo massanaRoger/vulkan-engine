@@ -31,6 +31,7 @@ struct GLTFMaterial {
 	ShadowInstance shadow;
 	ShadowInstance shadowcube;
 	float alphaCutoff;
+	bool isLightSource;
 };
 struct GeoSurface {
 	uint32_t startIndex;
@@ -63,6 +64,7 @@ struct GPUSceneData {
 	glm::vec4 lightColors[4];
 	uint32_t hasNormalMap;
 	float farPlane;
+	float emissiveFactor;
 };
 
 struct MeshAsset {
@@ -155,8 +157,10 @@ public:
 	struct MaterialConstants {
 		glm::vec4 colorFactors;
 		glm::vec4 metal_rough_factors;
+		float emissiveFactor;
 		//padding, we need it anyway for uniform buffers
-		glm::vec4 extra[14];
+		float p[3];
+		glm::vec4 extra[13];
 	};
 
 	struct MaterialResources {
@@ -168,6 +172,9 @@ public:
 		VkSampler normalSampler;
 		AllocatedImage aoImage;
 		VkSampler aoSampler;
+		AllocatedImage emissiveTexture;
+		VkSampler emissiveSampler;
+		glm::vec3 emissiveFactor;
 		AllocatedImage depthImage;
 		VkSampler depthSampler;
  		VkBuffer dataBuffer;
@@ -241,6 +248,7 @@ public:
 
 	VkSampler defaultSamplerLinear;
 	AllocatedImage whiteImage;
+	AllocatedImage blackImage;
 
 	GLTFMetallic_Roughness metalRoughMaterial;
 	// Shadow shadow;

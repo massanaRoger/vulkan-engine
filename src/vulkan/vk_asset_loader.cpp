@@ -3,6 +3,7 @@
 #include "fastgltf/tools.hpp"
 #include "fastgltf/types.hpp"
 #include "fastgltf/util.hpp"
+#include "glm/ext/vector_float3.hpp"
 #include "vulkan/vk_types.h"
 #include <optional>
 #include "stb_image.h"
@@ -150,6 +151,13 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 
 		constants.metal_rough_factors.x = mat.pbrData.metallicFactor;
 		constants.metal_rough_factors.y = mat.pbrData.roughnessFactor;
+
+		if (mat.emissiveStrength.has_value()) {
+			constants.emissiveFactor = mat.emissiveStrength.value();
+		} else {
+			constants.emissiveFactor = 1.f;
+		}
+
 		// write material parameters to buffer
 		sceneMaterialConstants[data_index] = constants;
 
@@ -160,6 +168,13 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 		} else if (mat.alphaMode == fastgltf::AlphaMode::Mask) {
 			newMat.get()->alphaCutoff = mat.alphaCutoff;
 		}
+
+		if (filePath == "../../models/sphere.glb") {
+			newMat->isLightSource = true;
+		} else {
+			newMat->isLightSource = false;
+		}
+
 
 		ShadowCube::ShadowResources shadowcubeResources;
 		shadowcubeResources.dataBuffer = file.materialDataBuffer.buffer;
@@ -177,6 +192,8 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 		materialResources.aoSampler = renderer.defaultSamplerLinear;
 		materialResources.depthImage = renderer.shadowcube.cubeMap;
 		materialResources.depthSampler = renderer.shadowcube.cubemapSampler;
+		materialResources.emissiveTexture = renderer.blackImage;
+		materialResources.emissiveSampler = renderer.defaultSamplerLinear;
 		materialResources.hasNormalMap = 0;
 
 		// set the uniform buffer for the material data
@@ -219,6 +236,20 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(std::string_view filePath)
 			materialResources.aoImage = images[img];
 			materialResources.aoSampler = file.samplers[sampler];
 		}
+
+		if (mat.emissiveTexture.has_value()) {
+			size_t img = gltf.textures[mat.emissiveTexture.value().textureIndex].imageIndex.value();
+			size_t sampler = gltf.textures[mat.emissiveTexture.value().textureIndex].samplerIndex.value();
+
+			materialResources.emissiveTexture = images[img];
+			materialResources.emissiveSampler = file.samplers[sampler];
+			materialResources.emissiveFactor = glm::vec3(
+				mat.emissiveFactor[0],
+				mat.emissiveFactor[1],
+				mat.emissiveFactor[2]
+			);
+		}
+
 
 		newMat->data = renderer.metalRoughMaterial.write_material(renderer.device, passType, materialResources, file.descriptorPool);
 		shadowcubeResources.dataBufferOffset = 0;

@@ -22,4 +22,5 @@ layout(set = 1, binding = 2) uniform sampler2D metalRoughTex;
 layout(set = 1, binding = 3) uniform sampler2D normalTex;
 layout(set = 1, binding = 4) uniform sampler2D aoTex;
 layout(set = 1, binding = 5) uniform sampler2D shadowMap;
+layout(set = 1, binding = 6) uniform sampler2D emissiveMap;
 

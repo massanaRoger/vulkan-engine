@@ -48,6 +48,7 @@ void main()
 	float metallic  = texture(metalRoughTex, inUV).b;
 	float roughness = texture(metalRoughTex, inUV).g;
 	float ao        = texture(aoTex, inUV).r;
+	vec3 emissiveColor = texture(emissiveMap, inUV).rgb;
 
 	vec3 N = getNormalFromMap();
 	vec3 V = normalize(sceneData.camPos.xyz - inWorldPos);
@@ -90,6 +91,8 @@ void main()
 
 	vec3 ambient = vec3(0.03) * albedo * ao;
 	vec3 color = (ambient + (1.0 - shadow)) * Lo;
+
+	color += emissiveColor * materialData.emissiveFactor;
 
 	color = color / (color + vec3(1.0));
 	color = pow(color, vec3(1.0/2.2));  

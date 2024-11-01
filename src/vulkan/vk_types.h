@@ -59,6 +59,8 @@ struct RenderObject {
 	VkDeviceAddress vertexBufferAddress;
 
 	float alphaCutoff;
+
+	bool isLightSource;
 };
 
 struct AllocatedImage {

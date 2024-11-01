@@ -103,6 +103,8 @@ void Renderer::init_default_data()
 
 	whiteImage = resourceManager.create_image(device, m_graphicsCommandPool, m_graphicsQueue, m_physicalDevice, (void*)&white, VkExtent3D{ 1, 1, 1 }, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false, m_queueFamilies);
 
+	blackImage = resourceManager.create_image(device, m_graphicsCommandPool, m_graphicsQueue, m_physicalDevice, (void*)&black, VkExtent3D{ 1, 1, 1 }, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false, m_queueFamilies);
+
 	errorCheckerboardImage = resourceManager.create_image(device, m_graphicsCommandPool, m_graphicsQueue, m_physicalDevice, pixels.data(), VkExtent3D{ 16, 16, 1 }, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false, m_queueFamilies);
 
 	VkSamplerCreateInfo sampl = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -128,6 +130,9 @@ void Renderer::init_default_data()
 	materialResources.aoSampler = defaultSamplerLinear;
 	materialResources.depthImage = shadowcube.depthImage;
 	materialResources.depthSampler = shadowcube.depthSampler;
+	materialResources.emissiveTexture = blackImage;
+	materialResources.emissiveSampler = defaultSamplerLinear;
+
 
 	//set the uniform buffer for the material data
 	m_materialConstants = resourceManager.create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, m_queueFamilies);
@@ -139,6 +144,7 @@ void Renderer::init_default_data()
 
 	sceneUniformData->colorFactors = glm::vec4{ 1, 1, 1, 1 };
 	sceneUniformData->metal_rough_factors = glm::vec4{ 1, 0.5, 0, 0 };
+	sceneUniformData->emissiveFactor = 0.f;
 
 	vmaUnmapMemory(resourceManager.get_allocator(), m_materialConstants.allocation);
 
@@ -1669,6 +1675,9 @@ void Renderer::update_cube_face(uint32_t faceIndex, VkCommandBuffer commandBuffe
 	MaterialInstance* lastMaterial = nullptr;
 
 	for (const RenderObject& obj : m_mainDrawContext.opaqueSurfaces) {
+		if (obj.isLightSource) {
+			continue;
+		}
 		vkCmdBindIndexBuffer(commandBuffer, obj.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
 		if (obj.material != lastMaterial) {
@@ -1879,7 +1888,6 @@ void Renderer::update_scene(const Camera& camera)
 
 	// TODO: update to multiple lightpos in cubemap
 	glm::vec4 lightPos = m_sceneData.lightPos[0];
-
 
 	m_offscreenData.lightPos = lightPos;
 	m_offscreenData.farPlane = zFar;
@@ -2185,7 +2193,14 @@ void GLTFMetallic_Roughness::build_pipelines(Renderer& renderer)
 	samplerLayoutBinding5.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 	samplerLayoutBinding5.pImmutableSamplers = nullptr;
 
-	std::array<VkDescriptorSetLayoutBinding, 6> bindings = { uboLayoutBinding, samplerLayoutBinding1, samplerLayoutBinding2, samplerLayoutBinding3, samplerLayoutBinding4, samplerLayoutBinding5 };
+	VkDescriptorSetLayoutBinding samplerLayoutBinding6{};
+	samplerLayoutBinding6.binding = 6;
+	samplerLayoutBinding6.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	samplerLayoutBinding6.descriptorCount = 1;
+	samplerLayoutBinding6.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	samplerLayoutBinding6.pImmutableSamplers = nullptr;
+
+	std::array<VkDescriptorSetLayoutBinding, 7> bindings = { uboLayoutBinding, samplerLayoutBinding1, samplerLayoutBinding2, samplerLayoutBinding3, samplerLayoutBinding4, samplerLayoutBinding5, samplerLayoutBinding6 };
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -2433,7 +2448,7 @@ MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, Materia
 	writer.write_image(3, resources.normalImage.imageView, resources.normalSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	writer.write_image(4, resources.aoImage.imageView, resources.aoSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	writer.write_image(5, resources.depthImage.imageView, resources.depthSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-
+	writer.write_image(6, resources.emissiveTexture.imageView, resources.emissiveSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
 	writer.update_set(device, matData.materialSet);
 
@@ -2453,6 +2468,7 @@ void MeshNode::draw(const glm::mat4& topMatrix, DrawContext &ctx)
 		def.shadowMaterial = &s.material->shadowcube;
 
 		def.alphaCutoff = s.material->alphaCutoff;
+		def.isLightSource = s.material->isLightSource;
 
 		def.transform = nodeMatrix;
 		def.vertexBufferAddress = mesh->meshBuffers.vertexBufferAddress;
